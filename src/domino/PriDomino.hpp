@@ -67,7 +67,7 @@ Domino::Event PriDomino<aDominoType>::setPriority(const Domino::EvName& aEvName,
     // validate
     if (this->nHdlr(aEvName) > 0)
     {
-        ERR("(PriDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/mislead result");
+        ERR("(PriDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/misleading result");
         return Domino::D_EVENT_FAILED_RET;
     }
 

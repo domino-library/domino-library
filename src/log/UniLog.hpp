@@ -53,7 +53,7 @@
 //   . low couple:
 //     . 2 obj sharing 1 log, del 1 obj, another obj still can log
 //     . del 1 UniLog, copied one still can log (UniLog can't be assigned since const member)
-//     . callback func can independ logging/no crash
+//     . callback func can independently log / no crash
 //   * support default / global UniLog as if legacy
 //     . class based on UniLog: default using UniLog(ULN_DEFAULT)
 //     . func with UniLog para: default using UniLog::defaultUniLog()
@@ -91,7 +91,7 @@
 //     . can create new member within func
 //   . why name as oneLog:
 //     . vs ssLog: oneLog can represent SmartLog or UniLog
-//     . vs log: too common, possible comflict with user definition
+//     . vs log: too common, possible conflict with user definition
 //   . why not support multi-thread:
 //     . mainthread/logic is the most usage
 //     . not worth to pay(lock-mechanism) for low-possible usage

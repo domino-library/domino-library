@@ -48,7 +48,6 @@ jobs:
         path: |
           ./ut/gcovr/cov.*
           ./*gcov
-          ./ut/CMakeFiles/UtLib.dir/domino/*PriDom*
 
     - uses: codecov/codecov-action@v7
       if: always()

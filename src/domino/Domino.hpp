@@ -10,7 +10,7 @@
 // - how:
 //   . treat each clue as an event, like a domino tile
 //   . treat each task as a hdlr (callback func)
-//   . each hdlr relies on limited event(s), each event may also rely on some ohter event(s)
+//   . each hdlr relies on limited event(s), each event may also rely on some other event(s)
 //   . whenever an event occurred, following event(s) can be auto-triggered, so on calling hdlr(s)
 //   . this will go till end (like domino)
 // - clarify:
@@ -95,7 +95,7 @@ public:
     [[nodiscard]] bool state(Event aEv) const noexcept { return aEv < states_.size() ? states_[aEv] : false; }
     size_t setState(const SimuEvents&);  // ret real changed ev#
 
-    Event  setPrev(const EvName&, const SimuEvents&) noexcept;  // be careful not create eg ttue-false loop
+    Event  setPrev(const EvName&, const SimuEvents&) noexcept;  // be careful not create eg true-false loop
     [[nodiscard]] EvName whyFalse(Event) const noexcept;  // debug only; read-only API - no hurt if fake Event
 
 protected:
@@ -225,12 +225,12 @@ private:
 //   . EvName is lower performance than Event?
 //     . a little, hope compiler optimize it
 //   . Can buffer last EvName ptr to speedup?
-//     . dangeous: diff func could create EvName at same address in stack
-//     . 021-09-22: all UT, only 41% getEventBy() can benefit by buffer, not worth vs dangeous
+//     . dangerous: diff func could create EvName at same address in stack
+//     . 021-09-22: all UT, only 41% getEventBy() can benefit by buffer, not worth vs dangerous
 //
 // - why not rm Ev
 //   . may impact related prev/next Ev, complex & out-control
-//   . dangeous: may break deduced path
+//   . dangerous: may break deduced path
 //     . rm entire Dom is safer
 //     . not must-have req
 //     . but keep inc Ev is not sustainable (may use up mem), eg swm's dom for version ctrl
@@ -251,7 +251,7 @@ private:
 //     . to search partial EvName (for eg rm subtree's hdlrs)
 //     . simplest to ret & (let user impl partial/template/etc match)
 //     . safe to ret const (don't defense users' abusing)
-//     . search DomDoor? no untill real req
+//     . search DomDoor? no until real req
 //
 // - how:
 //   *)trigger

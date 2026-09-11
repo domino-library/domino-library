@@ -10,7 +10,7 @@
 //   . so mv hdlr out Domino
 //
 // - why/value:
-//   . pure Domino w/o hdlr (SOLID#1: single-responbility)
+//   . pure Domino w/o hdlr (SOLID#1: single-responsibility)
 //   * basic hdlr for common usage
 //     . and extendable
 //   . support rm hdlr

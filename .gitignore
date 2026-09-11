@@ -1,0 +1,35 @@
+# in-source cmake (CI: cmake .)
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+Testing/
+_deps/
+compile_commands.json
+.cmake/
+
+# binaries / libs this tree produces
+ut_exe
+ut_exe.exe
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exp
+*.pdb
+*.ilk
+
+# coverage / valgrind (written next to sources or ut/gcovr/)
+*.gcda
+*.gcno
+*.gcov
+ut/gcovr/cov.*
+
+# optional out-of-source dirs
+/build/
+/build-*/
+/out/

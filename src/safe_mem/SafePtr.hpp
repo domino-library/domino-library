@@ -33,7 +33,7 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cassert>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <type_traits>
@@ -79,7 +79,7 @@ public:
     template<typename T1, typename U1> friend bool operator< (const SafePtr<T1>&, const SafePtr<U1>&) noexcept;
     friend struct std::hash<SafePtr>;
     // safe-only cp/mv diff-type (vs shared_ptr, eg static_pointer_cast<any> is not safe)
-    // - SFINAE: 1)testable 2)more clear compile-err 3)overload resulution: trim & predicatable
+    // - SFINAE: 1)testable 2)more clear compile-err 3)overload resolution: trim & predictable
     // - by-value: lvalue→cp param then mv pT_; rvalue→mv param then mv pT_ (extra mv negligible)
     template<typename From, std::enable_if_t<std::is_convertible_v<From*, T*>, int> = 0>
         SafePtr(SafePtr<From>) noexcept;  // cp & mv, ok (or compile err)
@@ -102,7 +102,7 @@ public:
     // . no operator*() since T& is unsafe
     [[nodiscard]]
         std::shared_ptr<T> get() const noexcept { return pT_; }
-    std::shared_ptr<T> operator->() const noexcept { assert(pT_); return pT_; }  // convenient; unsafe to ret ref
+    std::shared_ptr<T> operator->() const noexcept;  // convenient; unsafe to ret ref
     explicit operator bool() const noexcept { return pT_ != nullptr; }
     [[nodiscard]] auto use_count() const noexcept { return pT_.use_count(); }
     void swap(SafePtr& aOther) noexcept;
@@ -216,6 +216,18 @@ auto SafePtr<T>::lastType() const noexcept
 
 // ***********************************************************************************************
 template<typename T>
+std::shared_ptr<T> SafePtr<T>::operator->() const noexcept
+{
+    if (!pT_)
+    {
+        HID("(SafePtr ERR!) operator-> on null");  // only HID is MT safe
+        std::abort();  // safer: no dirty mem; easier debug: here rather than later; simpler than terminate()
+    }
+    return pT_;
+}
+
+// ***********************************************************************************************
+template<typename T>
 void SafePtr<T>::swap(SafePtr& aOther) noexcept
 {
     pT_.swap(aOther.pT_);
@@ -232,7 +244,7 @@ template<typename U, typename... ConstructArgs>
     SafePtr<U> safeU;
     try {  // bad_alloc, or except from U's constructor
         safeU.pT_ = std::make_shared<U>(std::forward<ConstructArgs>(aArgs)...);  // std::make_shared, not boost's
-        // HID("new ptr=" << (void*)(safeU.pT_.get()));  // too many print; void* print addr rather than content(dangeous)
+        // HID("new ptr=" << (void*)(safeU.pT_.get()));  // too many print; void* print addr rather than content(dangerous)
     } catch(...) {
         HID("(make_safe) except=" << mt_exceptInfo());  // only HID is MT safe
     }
@@ -278,7 +290,7 @@ void swap(SafePtr<T>& lhs, SafePtr<T>& rhs) noexcept
 }
 
 // ***********************************************************************************************
-// - safe cast all possible (self/base/dderive/void/back, more than cp constructor)
+// - safe cast all possible (self/base/derive/void/back, more than cp constructor)
 // - explicit cast so ok or nullptr (cp/mv constructor is implicit & ok/compile-err)
 // - unified-ret is predictable & simple
 // - std not allow overload dynamic_pointer_cast so safe_cast & DYN_PTR_CAST
@@ -393,7 +405,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 //
 //   . How to solve safety issue:
 //     . way#1: Rust is language-based mem ctrl (heavy)
-//     . way#2: tool (dynamic eg valdrind, or static eg coverity)
+//     . way#2: tool (dynamic eg valgrind, or static eg coverity)
 //       . keep legacy code/invest
 //       . but less safe than Rust
 //     . way#3: eg SafePtr
@@ -407,7 +419,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 //
 //   . must replace shared_ptr in DatDom, ObjAnywhere?
 //     . SafePtr is simple
-//     . freq cast void->any is dangeous
+//     . freq cast void->any is dangerous
 //     . so worth
 //   . get()/etc ret shared_ptr<T>, safe?
 //     . safer than ret T* since still under lifecycle-protect
@@ -425,7 +437,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 //   * like shared_ptr's deleter to cast pT_ to original type?
 //     . then can dyn cast to target type, better than realType_ & lastType_
 //     . need the "caster" be same para & ret - impossible
-//   . encapulate cast related? better in shared_ptr's ctrl blk
+//   . encapsulate cast related? better in shared_ptr's ctrl blk
 //
 //   . T not ref/ptr/const?
 //   . SafeRef? or like this?

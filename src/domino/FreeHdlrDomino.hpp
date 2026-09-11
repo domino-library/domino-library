@@ -11,7 +11,7 @@
 //   * safer to reduce wrong call, etc. [MUST-HAVE!]
 //
 // - REQ:
-//   * facilitate user so must be safe-simple (avoid complex/dangeous, manual can handle them)
+//   * facilitate user so must be safe-simple (avoid complex/dangerous, manual can handle them)
 //   . whenever hdlr on road, rm hdlr still can cancel it
 //   * no gap between call-hdlr & rm-hdlr - safe as user's expectation
 //
@@ -82,7 +82,7 @@ Domino::Event FreeHdlrDomino<aDominoType>::repeatedHdlr(const Domino::EvName& aE
     // validate
     if (this->nHdlr(aEvName) > 0)
     {
-        ERR("(FreeHdlrDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/mislead result");
+        ERR("(FreeHdlrDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/misleading result");
         return Domino::D_EVENT_FAILED_RET;
     }
 
