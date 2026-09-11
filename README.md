@@ -43,7 +43,7 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 
 ## Build and Run
 
-Requirements: CMake 3.14 or newer and a C++17-capable compiler.
+Requirements: CMake 3.16 or newer and a C++17-capable compiler.
 
 Ask AI for details.
 
