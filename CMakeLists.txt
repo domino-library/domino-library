@@ -5,11 +5,26 @@ project(ut_exe  CXX)  # as early as possible, eg must before CMAKE_CXX_FLAGS
 
 set(CMAKE_CXX_EXTENSIONS  OFF)
 
+# ------------------------------------------------------------------------------------------------
+# build mode: cmake -Dci=<mode> ..   (empty = fast UT, the local default)
+# - 1 knob replaces CMAKE_BUILD_TYPE: each mode bundles -O/-g, sanitizer/coverage and macros
+set(ci  ""  CACHE STRING  "UT build mode: <empty>=fast UT | cov | asan | tsan | release")
+set(_ci_allowed  ""  cov  asan  tsan  release)
+set_property(CACHE ci  PROPERTY STRINGS  ${_ci_allowed})
+if(NOT ci  IN_LIST  _ci_allowed)
+    message(FATAL_ERROR  "unknown ci='${ci}', expect one of: cov asan tsan release (or empty)")
+endif()
+if(CMAKE_BUILD_TYPE)
+    message(FATAL_ERROR  "this project selects flags via -Dci=<mode>, not CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'")
+endif()
+set(_cxx_std  cxx_std_17)  # 17 since "if constexpr()"
+
 if(ci  STREQUAL  "cov")
     message("!!! coverage & valgrind(only need -g -fno-omit-frame-pointer)")
     add_compile_options(--coverage -fPIC -O0 -fprofile-abs-path -g)  # gcov + valgrind req
     add_link_options(--coverage)                                     # gcov req
     add_compile_definitions(SMART_LOG WITH_HID_LOG)  # more info to debug ci
+    set(_cxx_std  cxx_std_20)  # try c++20/23 to see cov rate inc or not
 
 elseif(ci  STREQUAL  "asan")
     message("!!! asan+lsan+ubsan for: use-after-free, double-free, out-of-bound, leak, undef behavior")
@@ -72,12 +87,8 @@ FetchContent_MakeAvailable(googletest)
 add_subdirectory(src)
 add_subdirectory(ut)
 
-# C++ standard on targets
-if(ci  STREQUAL  "cov")
-    target_compile_features(lib_domino  PUBLIC  cxx_std_20)  # try c++20/23 to see cov rate inc or not
-else()
-    target_compile_features(lib_domino  PUBLIC  cxx_std_17)  # 17 since "if constexpr()"
-endif()
+# C++ standard on targets (decided per ci mode above)
+target_compile_features(lib_domino  PUBLIC  ${_cxx_std})
 
 target_link_libraries(ut_exe  PRIVATE
     lib_domino
