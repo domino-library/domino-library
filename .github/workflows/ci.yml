@@ -52,9 +52,11 @@ jobs:
     - uses: codecov/codecov-action@v7
       if: always()
       with:
-        files: ut/gcovr/cov.xml  # optional
-        flags: ci_main           # optional
-        fail_ci_if_error: true   # optional (default = false)
-        verbose: true            # optional (default = false)
+        files: ut/gcovr/cov.xml
+        disable_search: true
+        slug: domino-library/domino-library
+        flags: ci_main
+        fail_ci_if_error: true
+        verbose: true
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
