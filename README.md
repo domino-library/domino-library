@@ -56,4 +56,4 @@ tests; the existing tests are the primary usage examples.
 
 Primary maintainer: [fchn289](https://github.com/fchn289)  
 Contribution history: [GitHub contributors](https://github.com/nokia/domino-library/graphs/contributors)  
-Contact: csz289@aliyun.com
+Contact: fchn289@gmail.com
