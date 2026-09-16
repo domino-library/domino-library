@@ -9,7 +9,7 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
   - **AI benchmark:** Give Claude Opus 4.5 only [SafePtr's UTs](ut/safe_mem) and ask it to produce its best implementation that passes every test. Then compare the generated implementation with the [existing code](src/safe_mem) under the same rubric. **Result in my run: existing SafePtr 92/100; Opus baseline 68/100.**
 
 [![Build Status](https://github.com/domino-library/domino-library/actions/workflows/ci.yml/badge.svg)](https://github.com/domino-library/domino-library/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/domino-library/domino-library/branch/main/graph/badge.svg?token=LGK8GD9GJD)](https://codecov.io/gh/domino-library/domino-library)
+[![codecov](https://codecov.io/gh/domino-library/domino-library/branch/main/graph/badge.svg?token=intbnIJQBV)](https://codecov.io/gh/domino-library/domino-library)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
 ![Domino tiles](image/domino.jpg)
@@ -49,8 +49,7 @@ Ask AI for details.
 
 ## Contributing
 
-Issues and pull requests are welcome. Changes should include or update unit
-tests; the existing tests are the primary usage examples.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Maintainer
 
