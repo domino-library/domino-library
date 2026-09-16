@@ -8,8 +8,8 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 - Quality/proficiency, e.g.:
   - **AI benchmark:** Give Claude Opus 4.5 only [SafePtr's UTs](ut/safe_mem) and ask it to produce its best implementation that passes every test. Then compare the generated implementation with the [existing code](src/safe_mem) under the same rubric. **Result in my run: existing SafePtr 92/100; Opus baseline 68/100.**
 
-[![Build Status](https://github.com/nokia/domino-library/actions/workflows/ci.yml/badge.svg)](https://github.com/nokia/domino-library/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/nokia/domino-library/branch/main/graph/badge.svg?token=LGK8GD9GJD)](https://codecov.io/gh/nokia/domino-library)
+[![Build Status](https://github.com/domino-library/domino-library/actions/workflows/ci.yml/badge.svg)](https://github.com/domino-library/domino-library/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/domino-library/domino-library/branch/main/graph/badge.svg?token=LGK8GD9GJD)](https://codecov.io/gh/domino-library/domino-library)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 
 ![Domino tiles](image/domino.jpg)
@@ -36,7 +36,7 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 ## Engineering
 
 - **[`ut/`](ut) each UT case is an end-to-end scenario.**
-- [GitHub Actions](https://github.com/nokia/domino-library/actions/workflows/ci.yml)
+- [GitHub Actions](https://github.com/domino-library/domino-library/actions/workflows/ci.yml)
   runs GoogleTest under Valgrind on pushes, pull requests, and a weekly schedule.
 - [High line & branch coverage](ut/gcovr/gcovr.cfg).
 - The currently verified CI environment is **Ubuntu + GCC**.
@@ -55,5 +55,5 @@ tests; the existing tests are the primary usage examples.
 ## Maintainer
 
 Primary maintainer: [fchn289](https://github.com/fchn289)  
-Contribution history: [GitHub contributors](https://github.com/nokia/domino-library/graphs/contributors)  
+Contribution history: [GitHub contributors](https://github.com/domino-library/domino-library/graphs/contributors)  
 Contact: fchn289@gmail.com
