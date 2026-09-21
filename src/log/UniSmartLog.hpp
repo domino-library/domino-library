@@ -1,5 +1,6 @@
 /**
  * Copyright 2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -49,6 +50,17 @@ public:
     void needLog() const noexcept { smartLog_->needLog(); }  // flag to dump
     const LogName& uniLogName() const noexcept { return uniLogName_; }
     static size_t nLog() noexcept { return name_log_S_.size(); }
+    // soak: OA/default logs never die; discard success text, do not name_log_S_.clear()
+    static void dropAllBuf_forUt() noexcept
+    {
+        for (auto&& name_log : name_log_S_)
+            if (name_log.second) name_log.second->dropBuf();
+    }
+    static void forceSaveAll_forUt() noexcept
+    {
+        for (auto&& name_log : name_log_S_)
+            if (name_log.second) name_log.second->forceSave();
+    }
 
 private:
     // -------------------------------------------------------------------------------------------
@@ -103,4 +115,5 @@ using UniLog = UniSmartLog;
 // 2022-12-02  CSZ       - simple & natural
 // 2024-02-21  CSZ       2)mem-safe
 // 2025-04-07  CSZ       3)tolerate exception
+// 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt for soak test
 // ***********************************************************************************************

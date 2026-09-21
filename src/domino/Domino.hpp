@@ -1,5 +1,6 @@
 /**
  * Copyright 2017 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -90,6 +91,7 @@ public:
     Event newEvent(const EvName&) noexcept;  // empty EvName is valid - much simple to ensure succ
     [[nodiscard]] Event getEventBy(const EvName&) const noexcept;
     [[nodiscard]] EvNames evNames() const noexcept;
+    [[nodiscard]] size_t nEvSlot() const noexcept { return states_.size(); }  // high-water, incl recycled
 
     [[nodiscard]] bool state(const EvName& aEvName) const noexcept { return state(getEventBy(aEvName)); }
     [[nodiscard]] bool state(Event aEv) const noexcept { return aEv < states_.size() ? states_[aEv] : false; }

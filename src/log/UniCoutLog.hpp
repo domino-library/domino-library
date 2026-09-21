@@ -1,5 +1,6 @@
 /**
  * Copyright 2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -41,6 +42,8 @@ public:
     static void needLog() noexcept {}
     static LogName uniLogName() noexcept { return ULN_DEFAULT; }
     static size_t nLog() noexcept { return 1; }
+    static void dropAllBuf_forUt() noexcept {}     // SmartLog dual; cout has no buf
+    static void forceSaveAll_forUt() noexcept {}   // already on cout
 
     [[nodiscard]] static bool setLogFileOK(const std::string& aFileName) noexcept;
 
@@ -95,4 +98,5 @@ using UniLog = UniCoutLog;
 // 2024-02-21  CSZ       2)mem-safe
 // 2025-04-07  CSZ       3)tolerate exception
 // 2026-03-13  CSZ       4)log to file than cout
+// 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt stubs (SmartLog dual)
 // ***********************************************************************************************

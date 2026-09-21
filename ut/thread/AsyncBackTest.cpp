@@ -1,3 +1,9 @@
+/**
+ * Copyright 2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
+ * Licensed under the BSD 3 Clause license
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
 #define  THREAD_BACK_TYPE  AsyncBack
 #define  THREAD_BACK_TEST  AsyncBackTest
 #include "ThreadBackTest.hpp"
@@ -45,11 +51,7 @@ TEST_F(AsyncBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
         [](SafePtr<void>) {}
     )) << "REQ: accept after slot freed";
 
-    while (myBack.nFut() > 0)
-    {
-        (void)myBack.hdlDoneFut();
-        timedwait();
-    }
+    drainDoneFut(myBack);
 }
 
 }  // namespace

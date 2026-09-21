@@ -1,5 +1,6 @@
 /**
  * Copyright 2020 Nokia. All rights reserved.
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
 */
@@ -16,7 +17,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct DataDominoTest : public UtInitObjAnywhere
+struct DataDominoTest : public UtParaDom<aParaDom>
 {
 };
 TYPED_TEST_SUITE_P(DataDominoTest);

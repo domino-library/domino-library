@@ -1,3 +1,8 @@
+# Copyright 2023 Nokia
+# Copyright 2026 Shi-Zhong Chen
+# Licensed under the BSD 3 Clause license
+# SPDX-License-Identifier: BSD-3-Clause
+
 message("\n*** cmake lib_ut: so users can call this CMakeLists.txt in their own project ***")
 
 file(GLOB_RECURSE  list_src  CONFIGURE_DEPENDS

@@ -1,5 +1,6 @@
 /**
  * Copyright 2023 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -48,7 +49,9 @@ void MT_Notifier::timedwait(const size_t aSec, const size_t aRestNsec) noexcept
             for (int i = 0; i < 100 && sem_trywait(&mt_sem_) == 0; ++i);
             return;
         }
-        // continue for EINTR, etc (spurious wakeup)
+        if (ret == -1 && errno != EINTR)
+            return;  // not timeout/notify/EINTR (eg EINVAL): stop, don't loop
+        // EINTR: retry until timeout or notify
     }
 }
 

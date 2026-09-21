@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2026 Nokia
+# Copyright 2026 Shi-Zhong Chen
+# Licensed under the BSD 3 Clause license
+# SPDX-License-Identifier: BSD-3-Clause
 """
 REQ: Domino log -> tab-separated .csv -> Excel stacked-bar Gantt
 VALUE: visualize events from Domino log

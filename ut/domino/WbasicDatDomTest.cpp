@@ -1,5 +1,6 @@
 /**
  * Copyright 2021-2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,7 +16,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct WbasicDatDomTest : public UtInitObjAnywhere
+struct WbasicDatDomTest : public UtParaDom<aParaDom>
 {
     set<Domino::Event> uniqueEVs_;
 };

@@ -1,5 +1,6 @@
 /**
  * Copyright 2020-2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,7 +18,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct MultiHdlrDominoTest : public UtInitObjAnywhere
+struct MultiHdlrDominoTest : public UtParaDom<aParaDom>
 {
     MOCK_METHOD(void, hdlr0, ());
     MOCK_METHOD(void, hdlr1, ());

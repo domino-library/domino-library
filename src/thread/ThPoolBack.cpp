@@ -1,5 +1,6 @@
 /**
  * Copyright 2024 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -79,7 +80,11 @@ ThPoolBack::~ThPoolBack() noexcept
 // ***********************************************************************************************
 void ThPoolBack::clean_() noexcept
 {
-    mt_stopAllTH_.store(true, std::memory_order_release);
+    {
+        // must hold mutex: otherwise worker may check stop=false, miss notify, then wait forever
+        lock_guard lock(mt_mutex_);
+        mt_stopAllTH_.store(true, std::memory_order_release);
+    }
     mt_qCv_.notify_all();
 
     for (auto&& th : thPool_)

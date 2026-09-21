@@ -1,5 +1,6 @@
 /**
  * Copyright 2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -22,6 +24,7 @@
 #include "ThPoolBack.hpp"
 #include "ThreadBackViaMsgSelf.hpp"
 #include "UniLog.hpp"
+#include "UtInitObjAnywhere.hpp"
 
 using namespace testing;
 
@@ -40,26 +43,44 @@ std::unique_ptr<T> mkBack_maxParallel2()
 }
 
 // ***********************************************************************************************
-struct THREAD_BACK_TEST : public Test, public UniLog
+inline void drainDoneFut(ThreadBack& back)
 {
-    THREAD_BACK_TEST() : UniLog(UnitTest::GetInstance()->current_test_info()->name())
+    // nFut()==0: done. handled some: try again now. handled 0: sleep until ping.
+    while (back.nFut() > 0)
+    {
+        if (back.hdlDoneFut() == 0)
+            timedwait();
+    }
+}
+
+// ***********************************************************************************************
+struct THREAD_BACK_TEST : public UtInitObjAnywhere
+{
+    THREAD_BACK_TEST() : threadBack_(*ObjAnywhere::getObj<THREAD_BACK_TYPE>().get())
     {
         mt_getMainTH();  // designate this (gtest) thread as the ONE logical main
         EXPECT_EQ(0, threadBack_.nFut()) << "REQ: clear env";
     }
-
-    ~THREAD_BACK_TEST()
+    void dumpIfFail() override
     {
+        if (!HasFailure()) return;
+        std::cerr << "nFut=" << threadBack_.nFut()
+            << " nQ=" << mt_getQ().size(true) << '\n';
+        UtInitObjAnywhere::dumpIfFail();
+    }
+    void TearDown() override
+    {
+        dumpIfFail();
+        if (isSoak() && HasFailure()) soakReplayAndAbort();
+        drainDoneFut(threadBack_);
+        threadBack_.mt_nDoneFut() = 0;  // bugFix case may leave a stale counter
         EXPECT_EQ(0, threadBack_.nFut()) << "REQ: handle all";
-        mt_getQ().clearHdlrPool();
-        ObjAnywhere::deinit();
-        g_notifMainTH.reset();  // reset global: avoid impact other testcases
-        GTEST_LOG_FAIL
+        mt_getQ().clearAll();
+        UtInitObjAnywhere::TearDown();
     }
 
     // -------------------------------------------------------------------------------------------
-    THREAD_BACK_TYPE threadBack_;
-    S_PTR<MsgSelf> msgSelf_ = MAKE_PTR<MsgSelf>(uniLogName());
+    THREAD_BACK_TYPE& threadBack_;  // OA default pool
 };
 
 #define THREAD_AND_BACK
@@ -167,6 +188,7 @@ TEST_F(THREAD_BACK_TEST, canHandle_someThreadDone_whileOtherRunning)
 // ***********************************************************************************************
 TEST_F(THREAD_BACK_TEST, GOLD_entryFn_notify_insteadof_timeout)
 {
+    if (isSoak()) GTEST_SKIP() << "wall-clock upper bound vs nice";
     auto start = std::chrono::high_resolution_clock::now();
     EXPECT_TRUE(threadBack_.newTaskOK(
         [] { return make_safe<bool>(true); },  // entryFn
@@ -254,13 +276,15 @@ TEST_F(THREAD_BACK_TEST, hdlDoneFut_wrongThread_rejected)
 }
 TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
 {
+    auto kept = MSG_SELF;
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK<MsgSelf>(nullptr, *this));  // rm so viaMsgSelf sees absent
+
     EXPECT_FALSE(threadBack_.newTaskOK(
         [] { return make_safe<bool>(true); },  // entryFn
         viaMsgSelf([](SafePtr<void>) {})  // invalid since msgSelf==nullptr
     ));
 
-    ObjAnywhere::init();
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(msgSelf_)) << "REQ: valid MSG_SELF";
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(kept, *this)) << "REQ: valid MSG_SELF";
     EXPECT_FALSE(threadBack_.newTaskOK(
         [] { return make_safe<bool>(true); },  // entryFn
         viaMsgSelf(nullptr)  // invalid since backFn==nullptr
@@ -332,12 +356,13 @@ TEST_F(THREAD_BACK_TEST, reqMainTH_trueInMain_falseInOtherThread)
 TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simulate real world
 {
     std::set<std::string> cb_info;
+    auto ms = MSG_SELF;  // same obj viaMsgSelf uses
 
     // setup msg handler table for mt_getQ()
     EXPECT_EQ(0u, mt_getQ().nHdlr())  << "REQ: init no hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([this, &cb_info](UniPtr aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([ms, &cb_info](UniPtr aMsg)
     {
-        EXPECT_TRUE(msgSelf_->newMsgOK(  // REQ: via MsgSelf
+        EXPECT_TRUE(ms->newMsgOK(  // REQ: via MsgSelf
             [aMsg, &cb_info]
             {
                 EXPECT_EQ("a", *(STATIC_PTR_CAST<std::string>(aMsg).get()));
@@ -346,9 +371,9 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
         )) << "REQ: enqueue msg";
     })) << "REQ: set hdlr";
     EXPECT_EQ(1u, mt_getQ().nHdlr())  << "REQ: count hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([this, &cb_info](UniPtr aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([ms, &cb_info](UniPtr aMsg)
     {
-        EXPECT_TRUE(msgSelf_->newMsgOK(
+        EXPECT_TRUE(ms->newMsgOK(
             [aMsg, &cb_info]
             {
                 EXPECT_EQ(2, *(STATIC_PTR_CAST<int>(aMsg).get()));
@@ -359,8 +384,6 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_EQ(2u, mt_getQ().nHdlr())  << "REQ: count hdlr";
 
     // push
-    ObjAnywhere::init();
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(msgSelf_)) << "REQ: valid MSG_SELF";
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
@@ -398,27 +421,28 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     for (;;)
     {
         // handle all done Thread
-        INF("nMsg=" << msgSelf_->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
+        INF("nMsg=" << ms->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
         auto handled = threadBack_.hdlDoneFut();
         (void)handled;
 
         // handle all existing in mt_getQ()
-        INF("nMsg=" << msgSelf_->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
+        INF("nMsg=" << ms->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
         mt_getQ().handleAllEle();
 
-        INF("nMsg=" << msgSelf_->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
-        msgSelf_->handleAllMsg();
+        INF("nMsg=" << ms->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
+        ms->handleAllMsg();
 
-        INF("nMsg=" << msgSelf_->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
+        INF("nMsg=" << ms->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
         if (expect == cb_info)
             return;
 
-        INF("nMsg=" << msgSelf_->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
+        INF("nMsg=" << ms->nMsg() << ", nQ=" << mt_getQ().size(true) << ", nTh=" << threadBack_.nFut());
         timedwait();
     }
 }
 TEST_F(THREAD_BACK_TEST, timeout)
 {
+    g_notifMainTH.reset();  // drop leftover posts from prior cases (soak keeps the notifier)
     timedwait(0, size_t(-1));  // REQ: invalid ns>=1000ms, no die (& clear previous mt_notify if existed)
 
     auto now = std::chrono::high_resolution_clock::now();
@@ -472,12 +496,7 @@ TEST_F(THREAD_BACK_TEST, limitMax_stays_at_constructMax_evenAfter_nonLimit_grow)
         [](SafePtr<void>) {}
     )) << "REQ: reject since nFut(3) >= constructMax(2)";
 
-    // clean
-    while (back->nFut() > 0)
-    {
-        (void)back->hdlDoneFut();
-        timedwait();
-    }
+    drainDoneFut(*back);
 }
 
 }  // namespace

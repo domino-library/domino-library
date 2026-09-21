@@ -1,3 +1,9 @@
+/**
+ * Copyright 2024 Nokia
+ * Copyright 2026 Shi-Zhong Chen
+ * Licensed under the BSD 3 Clause license
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
 #define  THREAD_BACK_TYPE  ThPoolBack
 #define  THREAD_BACK_TEST  ThPoolBackTest
 #include "ThreadBackTest.hpp"
@@ -94,11 +100,7 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
         [](SafePtr<void>) {}
     )) << "REQ: accept after slot freed";
 
-    while (myPool.nFut() > 0)
-    {
-        (void)myPool.hdlDoneFut();
-        timedwait();
-    }
+    drainDoneFut(myPool);
 }
 
 // ***********************************************************************************************
@@ -112,11 +114,7 @@ TEST_F(ThPoolBackTest, maxTaskQ_0_forced_to_default)
             [](SafePtr<void>) {}
         )) << "REQ: 0 forced to default";
     }
-    while (myPool.nFut() > 0)
-    {
-        (void)myPool.hdlDoneFut();
-        timedwait();
-    }
+    drainDoneFut(myPool);
 }
 
 }  // namespace

@@ -1,5 +1,6 @@
 /**
  * Copyright 2018-2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,7 +18,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct PriDominoTest : public UtInitObjAnywhere
+struct PriDominoTest : public UtParaDom<aParaDom>
 {
     MsgCB d1EventHdlr_ = [&](){ hdlrIDs_.push(1); };
     MsgCB d2EventHdlr_ = [&](){ hdlrIDs_.push(2); };

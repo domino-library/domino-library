@@ -24,10 +24,19 @@ jobs:
     timeout-minutes: 20
 
     steps:
+    - uses: actions/checkout@v7
+
+    - name: copyright
+      run: |
+        fail=0
+        while IFS= read -r f; do
+          grep -q 'SPDX-License-Identifier: BSD-3-Clause' "$f" || { echo "FAIL $f: SPDX"; fail=1; }
+          grep -qE 'Copyright [0-9]{4} Shi-Zhong Chen' "$f" || { echo "FAIL $f: Chen"; fail=1; }
+        done < <(git ls-files -- '*.hpp' '*.cpp' '*.py' '*.sh' '*CMakeLists.txt')
+        exit $fail
+
     - name: install valgrind
       run: sudo apt-get update && sudo apt-get install valgrind
-
-    - uses: actions/checkout@v7
 
     - name: make ut
       run: cmake -Dci=cov -DCMAKE_CXX_COMPILER="g++" . && make -j

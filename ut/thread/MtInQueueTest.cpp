@@ -1,11 +1,14 @@
 /**
  * Copyright 2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
 // ***********************************************************************************************
+#include <cstdlib>
 #include <future>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <queue>
 #include <thread>
 #include <unistd.h>
@@ -13,6 +16,7 @@
 #include "MT_Notifier.hpp"
 #include "UniLog.hpp"
 #include "UniPtr.hpp"
+#include "UtSoak.hpp"
 
 #define IN_GTEST
 #include "MT_PingMainTH.hpp"
@@ -29,11 +33,21 @@ struct MtInQueueTest : public Test, public UniLog
 {
     MtInQueueTest()
         : UniLog(UnitTest::GetInstance()->current_test_info()->name())
-    { mt_getMainTH(); }  // designate this (gtest) thread as the logical main (timedwait asserts it)
+    {
+        mt_getMainTH();  // designate this (gtest) thread as the logical main (timedwait asserts it)
+    }
+    void TearDown() override
+    {
+        if (HasFailure())
+            std::cerr << "nQ=" << mt_getQ().size(true)
+                << " nHdlr=" << mt_getQ().nHdlr() << '\n';
+        if (isSoak() && HasFailure()) soakReplayAndAbort();
+        mt_getQ().clearAll();  // same process Q; next case sees empty
+    }
     ~MtInQueueTest()
     {
-        mt_getQ().clearAll();  // not impact other testcase
         GTEST_LOG_FAIL
+        finishUniLogAfterCase(HasFailure());
     }
 };
 
@@ -318,9 +332,9 @@ TEST_F(MtInQueueTest, handle_via_base)
     EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(move(d))) << "REQ: push OK";
     EXPECT_EQ(2u, mt_getQ().size(true)) << "REQ: can push Derive to Base";
 
-    EXPECT_TRUE(mt_getQ().setHdlrOK<Base>([](UniPtr aEle)
+    int exp = 1;
+    EXPECT_TRUE(mt_getQ().setHdlrOK<Base>([&exp](UniPtr aEle)
     {
-        static int exp = 1;
         auto ele = STATIC_PTR_CAST<Base>(aEle);
         EXPECT_NE(nullptr, ele.get());
         EXPECT_EQ(exp++, ele.get()->value());

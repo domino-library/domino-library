@@ -1,5 +1,6 @@
 /**
  * Copyright 2016 Nokia. All rights reserved.
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,7 +18,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct DominoTest : public UtInitObjAnywhere
+struct DominoTest : public UtParaDom<aParaDom>
 {
     set<Domino::Event> uniqueEVs_;
 };

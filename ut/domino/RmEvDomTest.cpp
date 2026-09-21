@@ -1,5 +1,6 @@
 /**
  * Copyright 2023 Nokia. All rights reserved.
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -16,7 +17,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct RmEvDomTest : public UtInitObjAnywhere
+struct RmEvDomTest : public UtParaDom<aParaDom>
 {
 };
 
@@ -78,17 +79,18 @@ TYPED_TEST_P(RmDomTest, GOLD_reuse_ev)
 
 TYPED_TEST_P(RmDomTest, bugFix_recycleShallNotGrowInternalStateSpace)
 {
-    const auto reusedEv = PARA_DOM->newEvent("reused ev");
+    const auto nSlot0 = PARA_DOM->nEvSlot();
+    PARA_DOM->newEvent("reused ev");
+    const auto nSlot1 = PARA_DOM->nEvSlot();
+    EXPECT_LE(nSlot1, nSlot0 + 1u) << "REQ: one live ev uses at most one new slot";
 
     constexpr size_t nRound = 128;
     for (size_t i = 0; i < nRound; ++i)
     {
         EXPECT_TRUE(PARA_DOM->rmEvOK("reused ev")) << "REQ: can remove existing ev each round";
-        EXPECT_EQ(reusedEv, PARA_DOM->newEvent("reused ev")) << "REQ: shall reuse same removed ev id";
+        PARA_DOM->newEvent("reused ev");
+        EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot1) << "REQ: recycle shall not inflate event space";
     }
-
-    const auto freshEv = PARA_DOM->newEvent("fresh ev");
-    EXPECT_EQ(reusedEv + 1, freshEv) << "REQ: repeated recycle shall not inflate internal event space";
 }
 
 TYPED_TEST_P(RmDomTest, doubleRemove_rejected)
@@ -128,8 +130,10 @@ TYPED_TEST_P(RmDomTest, rmMiddle_thenRebuildLink_noFalseLoop)
 
 TYPED_TEST_P(RmDomTest, GOLD_nGo_fullLifecycle_createUseRmRepeat)
 {
-    // REQ: eNB-upgrade-like lifecycle — build chain, run it, tear down, repeat with new events
-    // verifies: no ghost state/links survive across cycles, recycled IDs work clean
+    // - REQ: eNB-upgrade-like lifecycle — build chain, run it, tear down, repeat with new events
+    // - verifies: no ghost state/links survive across cycles, recycled IDs work clean
+    // soak keeps the same DOM: recycle pool may already hold high IDs from earlier PARA tests
+    const auto nSlot0 = PARA_DOM->nEvSlot();
     for (int cycle = 0; cycle < 3; ++cycle)
     {
         auto tag = "v" + std::to_string(cycle);
@@ -149,10 +153,12 @@ TYPED_TEST_P(RmDomTest, GOLD_nGo_fullLifecycle_createUseRmRepeat)
         EXPECT_TRUE(PARA_DOM->rmEvOK(middle));
         EXPECT_TRUE(PARA_DOM->rmEvOK(head));
     }
-    // verify: 3 cycles × 3 events = 9 created, all recycled, no internal growth
-    // next fresh event should reuse a recycled ID (< 9), not allocate new (>= 9)
+    // 3-tile chain needs at most 3 new slots; later cycles + probe must recycle
+    EXPECT_LE(PARA_DOM->nEvSlot(), nSlot0 + 3u) << "REQ: later cycles recycle, no unbounded growth";
+    const auto nSlot1 = PARA_DOM->nEvSlot();
     auto probe = PARA_DOM->newEvent("probe");
-    EXPECT_LT(probe, 9u) << "REQ: IDs recycled across cycles, no unbounded growth";
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot1) << "REQ: IDs recycled across cycles, no unbounded growth";
+    EXPECT_LT(probe, nSlot1) << "REQ: probe reuses a recycled slot";
 }
 
 REGISTER_TYPED_TEST_SUITE_P(RmDomTest

@@ -1,3 +1,8 @@
+# Copyright 2022 Nokia
+# Copyright 2026 Shi-Zhong Chen
+# Licensed under the BSD 3 Clause license
+# SPDX-License-Identifier: BSD-3-Clause
+
 cmake_minimum_required(VERSION  3.16)
 
 # ------------------------------------------------------------------------------------------------
@@ -100,6 +105,14 @@ target_link_libraries(ut_exe  PRIVATE
 add_custom_target(run
     COMMAND  ./ut_exe --gtest_brief=0
     DEPENDS  ut_exe
+)
+
+# make soak  (not CI; flags in soak.sh)
+add_custom_target(soak
+    COMMAND  bash ${CMAKE_SOURCE_DIR}/ut/soak.sh
+    DEPENDS  ut_exe
+    WORKING_DIRECTORY  ${CMAKE_BINARY_DIR}
+    USES_TERMINAL
 )
 
 # simplify "make help"

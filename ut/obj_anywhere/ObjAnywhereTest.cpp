@@ -1,5 +1,6 @@
 /**
  * Copyright 2018-2022 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -61,10 +62,12 @@ TEST_F(ObjAnywhereTest, noSet_getNull)
 }
 TEST_F(ObjAnywhereTest, deinit_getNull)
 {
+    ObjAnywhere::deinit();
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>().get()) << "REQ: get null";
 }
 TEST_F(ObjAnywhereTest, deinitThenSet_getNull)
 {
+    ObjAnywhere::deinit();
     EXPECT_FALSE(ObjAnywhere::emplaceObjOK(MAKE_PTR<int>(1234), *this)) << "REQ: no init so set fail";
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>().get()) << "REQ: get null";
 }
@@ -79,6 +82,7 @@ TEST_F(ObjAnywhereTest, emptyName_getNull)
 }
 TEST_F(ObjAnywhereTest, GOLD_defaultName_distinctTypes)
 {
+    ObjAnywhere::deinit();
     ObjAnywhere::init(*this);
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<int >(11), *this)) << "REQ: store int  by default(typeid) name";
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<char>('z'), *this)) << "REQ: store char by default(typeid) name";
@@ -110,6 +114,7 @@ TEST_F(ObjAnywhereTest, newObjOK_forwardMultiArg)
 }
 TEST_F(ObjAnywhereTest, newObjOK_noInit_fail)
 {
+    ObjAnywhere::deinit();
     EXPECT_FALSE(ObjAnywhere::newObjOK<int>(1)) << "REQ: no init -> fail (not crash)";
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>().get()) << "REQ: get null";
 }
@@ -124,6 +129,7 @@ struct TestObj  // req: ObjAnywhere need not include Obj.hpp
 };
 TEST_F(ObjAnywhereTest, noInit_getNull)
 {
+    ObjAnywhere::deinit();
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<TestObj>().get()) << "REQ: getObj before init";
 }
 TEST_F(ObjAnywhereTest, GOLD_destructCorrectly)
@@ -139,6 +145,7 @@ TEST_F(ObjAnywhereTest, GOLD_destructCorrectly)
 TEST_F(ObjAnywhereTest, destructBySetNull)
 {
     bool isDestructed;
+    ObjAnywhere::deinit();
     ObjAnywhere::init(*this);
 
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TestObj>(isDestructed), *this));
@@ -183,6 +190,7 @@ TEST_F(ObjAnywhereTest, ignore_dup_init)
 }
 TEST_F(ObjAnywhereTest, default_is_deinit)
 {
+    ObjAnywhere::deinit();
     EXPECT_FALSE(ObjAnywhere::isInit());
     EXPECT_EQ(0u, ObjAnywhere::nObj());
 }

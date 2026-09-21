@@ -1,5 +1,6 @@
 /**
  * Copyright 2020 Nokia. All rights reserved.
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,7 +16,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct HdlrDominoTest : public UtInitObjAnywhere
+struct HdlrDominoTest : public UtParaDom<aParaDom>
 {
     MOCK_METHOD(void, hdlr0, ());
     MOCK_METHOD(void, hdlr1, ());
@@ -316,7 +317,10 @@ TYPED_TEST_P(NofreeHdlrDominoTest, hdlrOnRoad_thenRmDom_noCrash_noLeak)
 
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this)) << "REQ: rm dom";
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: no cb
+
+    // restore env
     this->pongMsgSelf_();
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TypeParam>(this->uniLogName()), *this));
 }
 
 #define FORCE_CALL
@@ -442,20 +446,22 @@ TYPED_TEST_P(HdlrDominoTest, replace_msgSelf)  // checked by CI valgrind
 
     PARA_DOM->setHdlr("event", this->hdlr0_);
     PARA_DOM->setState({{"event", true}});  // 1 msg in old msgSelf
-    auto msgSelf = MAKE_PTR<MsgSelf>(this->uniLogName());
-    ASSERT_FALSE(PARA_DOM->setMsgSelfOK(msgSelf)) << "REQ: can NOT set new msgSelf when unhandled msg in old";
+    auto newMsgSelf = MAKE_PTR<MsgSelf>(this->uniLogName());
+    ASSERT_FALSE(PARA_DOM->setMsgSelfOK(newMsgSelf)) << "REQ: can NOT set new msgSelf when unhandled msg in old";
 
+    EXPECT_CALL(*this, hdlr0());  // drain old queue fires the pending hdlr
     this->pongMsgSelf_();
-    ASSERT_TRUE(PARA_DOM->setMsgSelfOK(msgSelf)) << "REQ: can set new msgSelf";
+    ASSERT_TRUE(PARA_DOM->setMsgSelfOK(newMsgSelf)) << "REQ: can set new msgSelf";
+    EXPECT_TRUE(PARA_DOM->setMsgSelfOK(MSG_SELF));  // restore process MsgSelf for soak test
 }
 TYPED_TEST_P(HdlrDominoTest, bugFix_invalidMsgSelf)  // checked by CI valgrind
 {
-    auto dom = PARA_DOM;
+    auto kept = MSG_SELF;
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK<MsgSelf>(nullptr, *this));  // rm MsgSelf from ObjAnywhere
+    EXPECT_THROW(TypeParam(), std::runtime_error) << "REQ: TypeParam() shall throw when MsgSelf absent";
 
-    ObjAnywhere::deinit();  // free MsgSelf
-    EXPECT_THROW(TypeParam(), std::runtime_error) << "REQ: ctor shall throw when MsgSelf absent";
-
-    EXPECT_FALSE(dom->setMsgSelfOK(nullptr)) << "REQ: msgSelf=null is not allowed";
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(kept, *this));  // restore MsgSelf to ObjAnywhere
+    EXPECT_FALSE(PARA_DOM->setMsgSelfOK(nullptr)) << "REQ: msgSelf=null is not allowed";
 }
 
 // ***********************************************************************************************

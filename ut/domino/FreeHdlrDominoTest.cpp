@@ -1,5 +1,6 @@
 /**
  * Copyright 2019 Nokia. All rights reserved.
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -17,7 +18,7 @@ namespace rlib
 {
 // ***********************************************************************************************
 template<class aParaDom>
-struct FreeHdlrDominoTest : public UtInitObjAnywhere
+struct FreeHdlrDominoTest : public UtParaDom<aParaDom>
 {
     MsgCB h1_ = [this](){ hdlrIDs_.insert(1); };
     MsgCB h2_ = [this](){ hdlrIDs_.insert(2); };
@@ -262,7 +263,10 @@ TYPED_TEST_P(FreeHdlrDominoTest, BugFix_noCrash_whenRmDom)
     ASSERT_TRUE(MSG_SELF->nMsg());
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this))
         << "REQ: no mem leak when rm MsgSelf with h7 in msg queue";
+
+    // restore env
     this->pongMsgSelf_();
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TypeParam>(this->uniLogName()), *this));
 }
 
 #define ID_STATE

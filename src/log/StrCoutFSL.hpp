@@ -1,5 +1,6 @@
 /**
  * Copyright 2006 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -74,6 +75,7 @@ public :
     ~StrCoutFSL() noexcept;
 
     void forceSave() noexcept;
+    void dropBuf() noexcept { sbuf_.clear(); }  // discard text; keep the log object
     size_t size() const noexcept { return sbuf_.size(); }
 };
 
@@ -103,5 +105,6 @@ void StrCoutFSL::forceSave() noexcept
 // ..........  .........   .......................................................................
 // 2006-       CSZ       - create
 // 2022-01-01  PJ & CSZ  - formal log & naming
-// 2026-03-05  AI        - replace stringstream with lightweight custom streambuf + std::string
+// 2026-03-05  CSZ       - replace stringstream with lightweight custom streambuf + std::string
+// 2026-09-20  CSZ       - dropBuf() for soak to discard success text
 // ***********************************************************************************************

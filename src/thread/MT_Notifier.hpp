@@ -1,5 +1,6 @@
 /**
  * Copyright 2023 Nokia
+ * Copyright 2026 Shi-Zhong Chen
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -40,10 +41,10 @@ private:
     // -------------------------------------------------------------------------------------------
 #ifdef IN_GTEST
 public:
+    // eat leftover posts; do not destroy the sem (workers may still post)
     void reset() noexcept
     {
-        sem_destroy(&mt_sem_);
-        sem_init(&mt_sem_, 0, 0);
+        while (sem_trywait(&mt_sem_) == 0) {}
     }
 #endif
 };
