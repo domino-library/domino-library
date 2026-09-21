@@ -54,4 +54,13 @@ TEST_F(UniSmartLogTest, canDelLog_reflectsNeedLog)
     EXPECT_FALSE(log.canDelLog()) << "REQ: after needLog(), canDelLog() returns false";
 }
 
+// - soak: dump all live SmartLogs without name_log_S_.clear() (dropAllBuf is on every OA TearDown)
+TEST_F(UniSmartLogTest, forceSaveAll_dumpsThenClears)
+{
+    ClassUsr usr(logName_);
+    ASSERT_GT(UNI_LOG::logLen(logName_), 0u);
+    UNI_LOG::forceSaveAll_forUt();
+    EXPECT_EQ(0u, UNI_LOG::logLen(logName_)) << "REQ: dump then clear, log object kept";
+}
+
 }  // namespace rlib

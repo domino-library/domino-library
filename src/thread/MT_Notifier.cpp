@@ -40,18 +40,11 @@ void MT_Notifier::timedwait(const size_t aSec, const size_t aRestNsec) noexcept
     for (;;)
     {
         const auto ret = sem_clockwait(&mt_sem_, CLOCK_MONOTONIC, &ts);  // clock-immune
-        // - notified(include EOVERFLOW on sem_post side) or timeout
-        // - safe: must check ret firstly; safer to check ret=-1
-        if (ret == 0 || (ret == -1 && errno == ETIMEDOUT))
-        {
-            // - sem_trywait(): want to reduce counter to 0 so no immediate next wakeup
-            // - limit=100: cost little time (but counter may not 0 rarely)
-            for (int i = 0; i < 100 && sem_trywait(&mt_sem_) == 0; ++i);
-            return;
-        }
-        if (ret == -1 && errno != EINTR)
-            return;  // not timeout/notify/EINTR (eg EINVAL): stop, don't loop
-        // EINTR: retry until timeout or notify
+        if (ret == -1 && errno == EINTR)
+            continue;  // retry until timeout or notify
+        // notified (incl EOVERFLOW on post), timeout, or unrecoverable (eg EINVAL): stop
+        for (int i = 0; i < 100 && sem_trywait(&mt_sem_) == 0; ++i);  // drain: no immediate next wakeup
+        return;
     }
 }
 

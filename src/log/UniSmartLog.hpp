@@ -54,12 +54,12 @@ public:
     static void dropAllBuf_forUt() noexcept
     {
         for (auto&& name_log : name_log_S_)
-            if (name_log.second) name_log.second->dropBuf();
+            name_log.second->dropBuf();
     }
     static void forceSaveAll_forUt() noexcept
     {
         for (auto&& name_log : name_log_S_)
-            if (name_log.second) name_log.second->forceSave();
+            name_log.second->forceSave();
     }
 
 private:

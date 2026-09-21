@@ -188,4 +188,10 @@ TEST(StrCoutFSLTest, forceSave_thenMoreWrites_outputAll)
     EXPECT_EQ("Part1\nPart2\n", captured.str()) << "REQ: forceSave() then more writes should output all";
 }
 
+TEST_F(UniCoutLogTest, soak_dual_stubs_noop)
+{
+    UniCoutLog::dropAllBuf_forUt();   // SmartLog dual; cout has no buf
+    UniCoutLog::forceSaveAll_forUt();
+}
+
 }  // namespace rlib

@@ -297,6 +297,18 @@ TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
 
     EXPECT_EQ(0, threadBack_.nFut());
 }
+TEST_F(THREAD_BACK_TEST, viaMsgSelf_invalidPri_newMsgOK_fails_noCrash)
+{
+    EXPECT_TRUE(threadBack_.newTaskOK(
+        [] { return make_safe<bool>(true); },
+        viaMsgSelf([](SafePtr<void>) {}, static_cast<EMsgPriority>(EMsgPri_MAX))
+    )) << "REQ: wrap itself ok (MsgSelf present, backFN present)";
+
+    while (threadBack_.hdlDoneFut() == 0)
+        timedwait();
+
+    EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: invalid pri not queued; no crash";
+}
 TEST_F(THREAD_BACK_TEST, bugFix_nDoneFut_before_futureReady)
 {
     std::atomic<bool> canEnd(false);
