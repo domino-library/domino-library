@@ -12,7 +12,10 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <string>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "UniLog.hpp"
 #include "UniPtr.hpp"
@@ -59,6 +62,29 @@ struct CanRmEV : std::false_type {};
 template<class aT>
 struct CanRmEV<aT, std::void_t<decltype(std::declval<aT>().rmEvOK(std::declval<const Domino::EvName&>()))>>
     : std::true_type {};
+
+// ***********************************************************************************************
+template<class aT, class = void>
+struct CanRmAllHdlr : std::false_type {};
+template<class aT>
+struct CanRmAllHdlr<aT, std::void_t<decltype(std::declval<aT>().rmAllHdlr(std::declval<const Domino::EvName&>()))>>
+    : std::true_type {};
+
+// names this case passed to newEvent; absent key = first run, drop the whole graph
+inline std::unordered_map<std::string, std::unordered_set<Domino::EvName>> s_caseEv_;
+inline const Domino* s_noteDom_ = nullptr;
+inline std::unordered_set<Domino::EvName>* s_noteSet_ = nullptr;
+
+inline void noteNewEv_forUt(const Domino& dom, const Domino::EvName& name) noexcept
+{
+    if (&dom == s_noteDom_ && s_noteSet_)
+        s_noteSet_->insert(name);
+}
+inline std::string curUtName_()
+{
+    const auto* info = UnitTest::GetInstance()->current_test_info();
+    return std::string(info->test_suite_name()) + "." + info->name();
+}
 
 // ***********************************************************************************************
 // - simulate real world: init all objs via ObjAnywhere
@@ -143,6 +169,33 @@ struct UtParaDom : public UtInitObjAnywhere
                     << " why=" << PARA_DOM->whyFalse(PARA_DOM->getEventBy(en)) << '\n';
         UtInitObjAnywhere::dumpIfFail();
     }
+    void SetUp() override
+    {
+        if constexpr (CanRmEV<TypeParam>::value)
+        {
+            if (PARA_DOM)
+            {
+                const auto rec = s_caseEv_.find(curUtName_());
+                if (rec == s_caseEv_.end())  // first run, drop the whole graph
+                {
+                    for (auto&& en : PARA_DOM->evNames())
+                        EXPECT_TRUE(PARA_DOM->rmEvOK(en));
+                }
+                else  // not first run, drop only new evs - soak as real world
+                {
+                    for (auto&& en : rec->second)
+                        (void)PARA_DOM->rmEvOK(en);
+                }
+                if (MSG_SELF)
+                {
+                    EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
+                }
+                s_noteDom_ = PARA_DOM.get();
+                s_noteSet_ = &s_caseEv_[curUtName_()];
+                Domino::newEvHook_forUt = noteNewEv_forUt;
+            }
+        }
+    }
     void TearDown() override
     {
         dumpIfFail();
@@ -151,7 +204,14 @@ struct UtParaDom : public UtInitObjAnywhere
         {
             if constexpr (CanRmEV<TypeParam>::value)
             {
-                for (auto&& en : PARA_DOM->evNames()) EXPECT_TRUE(PARA_DOM->rmEvOK(en));
+                Domino::newEvHook_forUt = nullptr;
+                s_noteDom_ = nullptr;
+                s_noteSet_ = nullptr;
+                if constexpr (CanRmAllHdlr<TypeParam>::value)
+                {
+                    for (auto&& en : PARA_DOM->evNames())  // rm all hdlr in soak - avoid CB invalid *this
+                        PARA_DOM->rmAllHdlr(en);
+                }
             }
             else
             {

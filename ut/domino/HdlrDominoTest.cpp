@@ -423,17 +423,17 @@ TYPED_TEST_P(HdlrDominoTest, nonConstInterface_shall_createUnExistEvent_withStat
     this->uniqueEVs_.insert(Domino::D_EVENT_FAILED_RET);
     EXPECT_EQ(4u, this->uniqueEVs_.size());
 
-    EXPECT_FALSE(PARA_DOM->rmOneHdlrOK("e4")) << "REQ: rm nonexist hdlr";  // shall NOT generate new event
-    this->uniqueEVs_.insert(PARA_DOM->getEventBy("e4"));
-    EXPECT_EQ(4u, this->uniqueEVs_.size());
+    const auto e4 = PARA_DOM->getEventBy("e4");
+    EXPECT_FALSE(PARA_DOM->rmOneHdlrOK("e4")) << "REQ: rm nonexist hdlr";
+    EXPECT_EQ(e4, PARA_DOM->getEventBy("e4")) << "REQ: does not create";
 
-    PARA_DOM->forceAllHdlr("e5");  // shall NOT generate new event
-    this->uniqueEVs_.insert(PARA_DOM->getEventBy("e5"));
-    EXPECT_EQ(4u, this->uniqueEVs_.size());
+    const auto e5 = PARA_DOM->getEventBy("e5");
+    PARA_DOM->forceAllHdlr("e5");
+    EXPECT_EQ(e5, PARA_DOM->getEventBy("e5")) << "REQ: does not create";
 
-    PARA_DOM->nHdlr("e6");  // shall NOT generate new event
-    this->uniqueEVs_.insert(PARA_DOM->getEventBy("e6"));
-    EXPECT_EQ(4u, this->uniqueEVs_.size());
+    const auto e6 = PARA_DOM->getEventBy("e6");
+    PARA_DOM->nHdlr("e6");
+    EXPECT_EQ(e6, PARA_DOM->getEventBy("e6")) << "REQ: does not create";
 }
 
 #define MSG_SELF_RELATED

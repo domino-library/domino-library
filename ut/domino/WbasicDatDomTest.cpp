@@ -52,7 +52,7 @@ TYPED_TEST_P(WbasicDatDomTest, GOLD_wrCtrl_set_get_rm)  // non-wrData is covered
 }
 TYPED_TEST_P(WbasicDatDomTest, wrCtrlInterface_cannotHdl_nonWrDat)
 {
-    EXPECT_TRUE((setValueOK<TypeParam, int>(*PARA_DOM, "ev0", 1)))  // req: any type data (2nd=int>)
+    EXPECT_TRUE((setValueOK<TypeParam, int>(*PARA_DOM, "ev0", 1)))  // req: any type data (2nd=int)
         << "REQ: legacy set ok";
     EXPECT_EQ(nullptr, (wbasic_getData<TypeParam, int>(*PARA_DOM, "ev0").get())) << "REQ: w-get nonexist";
 
@@ -66,7 +66,7 @@ TYPED_TEST_P(WbasicDatDomTest, wrCtrlInterface_cannotHdl_nonWrDat)
 }
 TYPED_TEST_P(WbasicDatDomTest, canNOT_setWriteCtrl_afterOwnData)
 {
-    EXPECT_TRUE((setValueOK<TypeParam, char>(*PARA_DOM, "ev0", 'a')))  // req: any type data (3rd=char>)
+    EXPECT_TRUE((setValueOK<TypeParam, char>(*PARA_DOM, "ev0", 'a')))  // req: any type data (3rd=char)
         << "REQ: legacy set ok";
     EXPECT_FALSE(PARA_DOM->wrCtrlOk("ev0")) << "REQ: failed to avoid out-ctrl";
     EXPECT_FALSE(PARA_DOM->isWrCtrl("ev0")) << "REQ: flag no change";
@@ -120,14 +120,13 @@ TYPED_TEST_P(WbasicDatDomTest, nonConstInterface_shall_createUnExistEvent_withSt
     EXPECT_EQ(2u, this->uniqueEVs_.size());
     EXPECT_FALSE(PARA_DOM->state("e1"));
 
-    EXPECT_EQ(nullptr, (wbasic_getData<TypeParam, char>(*PARA_DOM, "e4").get())) << "REQ: no Event";
-    this->uniqueEVs_.insert(PARA_DOM->getEventBy("e4"));
-    EXPECT_EQ(2u, this->uniqueEVs_.size());
+    EXPECT_EQ(nullptr, (wbasic_getData<TypeParam, char>(*PARA_DOM, "wdat-get-absent").get()))
+        << "REQ: no wr-data";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("wdat-get-absent")) << "REQ: does not create";
 
-    EXPECT_FALSE((wbasic_setValueOK<TypeParam, int>(*PARA_DOM, "e5", 0)))
-        << "REQ: no Event since not isWrCtrl(\"e5\")";
-    this->uniqueEVs_.insert(PARA_DOM->getEventBy("e5"));
-    EXPECT_EQ(2u, this->uniqueEVs_.size());
+    EXPECT_FALSE((wbasic_setValueOK<TypeParam, int>(*PARA_DOM, "wdat-set-absent", 0)))
+        << "REQ: no Event since not isWrCtrl";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("wdat-set-absent")) << "REQ: does not create";
 }
 
 // ***********************************************************************************************

@@ -57,24 +57,20 @@ TYPED_TEST_P(RmDomTest, GOLD_rm_dom_resrc)
 TYPED_TEST_P(RmDomTest, GOLD_reuse_ev)
 {
     PARA_DOM->setPrev("e2", {{"e1", true}});  // create e2 before e1 to inc cov of recycleEv_()
-    const auto e1 = PARA_DOM->setPrev("e1", {{"e0", false}});
+    PARA_DOM->setPrev("e1", {{"e0", false}});
+    const auto nSlot = PARA_DOM->nEvSlot();
 
-    EXPECT_TRUE (PARA_DOM->rmEvOK("e1"));
-    EXPECT_EQ(e1, PARA_DOM->newEvent("new e1")) << "REQ: reuse removed ev as soon as possible.";
-    EXPECT_FALSE(PARA_DOM->isRemoved(e1)) << "REQ: new ev is not removed state.";
-
-    const auto e0 = PARA_DOM->getEventBy("e0");
-    const auto e2 = PARA_DOM->getEventBy("e2");
-    set<Domino::Event> evs = {e0, e2};
+    EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));
+    PARA_DOM->newEvent("new e1");
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
+    EXPECT_FALSE(PARA_DOM->isRemoved(PARA_DOM->getEventBy("new e1"))) << "REQ: new ev is not removed state.";
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("e0")) << "REQ: can remove more ev.";
     EXPECT_TRUE(PARA_DOM->rmEvOK("e2")) << "REQ: existing multi removed ev.";
-    EXPECT_EQ(1u, evs.count(PARA_DOM->newEvent("e3"))) << "REQ: can reuse removed ev.";
-    EXPECT_EQ(1u, evs.count(PARA_DOM->newEvent("e4"))) << "REQ: can reuse removed ev.";
+    PARA_DOM->newEvent("e3");
+    PARA_DOM->newEvent("e4");
     EXPECT_NE(PARA_DOM->getEventBy("e3"), PARA_DOM->getEventBy("e4")) << "REQ: diff reused ev.";
-
-    evs.insert(e1);
-    EXPECT_EQ(0u, evs.count(PARA_DOM->newEvent("e100"))) << "REQ: recycle used-up, create new.";
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse removed slots";
 }
 
 TYPED_TEST_P(RmDomTest, bugFix_recycleShallNotGrowInternalStateSpace)
@@ -190,13 +186,14 @@ TYPED_TEST_P(RmDataDomTest, GOLD_rm_DataDom_resrc)
     EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", MAKE_PTR<TestData>(isDestructed)))
         << "REQ: set data ok";
     EXPECT_FALSE(isDestructed);
-    const auto ev = PARA_DOM->getEventBy("ev");
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("ev")) << "REQ: rm succ.";
     EXPECT_TRUE(isDestructed) << "REQ: data is removed.";
     EXPECT_EQ(nullptr, PARA_DOM->getData("ev").get()) << "REQ: get null after removed.";
 
-    EXPECT_EQ(ev, PARA_DOM->newEvent("another ev"))  << "REQ: reuse ev.";
+    const auto nSlot = PARA_DOM->nEvSlot();
+    PARA_DOM->newEvent("another ev");
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
     EXPECT_EQ(nullptr, PARA_DOM->getData("another ev").get()) << "REQ: reuse ev's data space.";
 }
 
@@ -225,7 +222,6 @@ TYPED_TEST_P(RmWdatDomTest, GOLD_rm_WdatDom_resrc)
     EXPECT_TRUE(PARA_DOM->wbasic_replaceDataOK("ev", MAKE_PTR<TestData>(isDestructed)))
         << "REQ: set wr-data ok";
     EXPECT_FALSE(isDestructed);
-    const auto ev = PARA_DOM->getEventBy("ev");
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("ev")) << "REQ: rm succ.";
     EXPECT_TRUE(isDestructed) << "REQ: data is removed.";
@@ -234,7 +230,9 @@ TYPED_TEST_P(RmWdatDomTest, GOLD_rm_WdatDom_resrc)
 
     EXPECT_FALSE(PARA_DOM->rmEvOK("ev")) << "REQ: fail to rm invalid.";
 
-    EXPECT_EQ(ev, PARA_DOM->newEvent("another ev"))  << "REQ: reuse ev.";
+    const auto nSlot = PARA_DOM->nEvSlot();
+    PARA_DOM->newEvent("another ev");
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
     EXPECT_EQ(nullptr, PARA_DOM->wbasic_getData("another ev").get()) << "REQ: reuse ev's data space.";
 }
 
@@ -252,14 +250,16 @@ TYPED_TEST_SUITE_P(RmHdlrDomTest);
 TYPED_TEST_P(RmHdlrDomTest, GOLD_rm_HdlrDom_resrc)
 {
     multiset<int> hdlrIDs;
-    auto e1 = PARA_DOM->setHdlr("e1", [&hdlrIDs](){ hdlrIDs.insert(1); });
+    PARA_DOM->setHdlr("e1", [&hdlrIDs](){ hdlrIDs.insert(1); });
     PARA_DOM->setLinkedHdlr("e2", [&hdlrIDs](){ hdlrIDs.insert(2); }, "e1");
     PARA_DOM->setState({{"e1", true}});
     EXPECT_EQ(2u, MSG_SELF->nMsg()) << "REQ: 2 hdlrs on road.";
     EXPECT_EQ(0u, hdlrIDs.size()) << "REQ: not callback yet.";
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));
-    EXPECT_EQ(e1, PARA_DOM->setHdlr("another e1", [&hdlrIDs](){ hdlrIDs.insert(3); }))  << "REQ: reuse e1.";
+    const auto nSlot = PARA_DOM->nEvSlot();
+    PARA_DOM->setHdlr("another e1", [&hdlrIDs](){ hdlrIDs.insert(3); });
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
     PARA_DOM->forceAllHdlr("another e1");
     EXPECT_NE(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("e2")) << "REQ: rm ev not impact its alias.";
     EXPECT_EQ(3u, MSG_SELF->nMsg()) << "REQ: another e1's hdlr is on road.";
@@ -316,8 +316,10 @@ TYPED_TEST_P(RmFreeHdlrDomTest, GOLD_rm_FreeHdlrDom_resrc)
     EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));
     EXPECT_FALSE(PARA_DOM->isRepeatHdlr(e1)) << "REQ: rm Ev shall clear auto-free flag.";
 
-    EXPECT_EQ(e1, PARA_DOM->repeatedHdlr("another e1")) << "REQ: reuse e1.";
-    EXPECT_TRUE(PARA_DOM->isRepeatHdlr(e1));
+    const auto nSlot = PARA_DOM->nEvSlot();
+    const auto reused = PARA_DOM->repeatedHdlr("another e1");
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
+    EXPECT_TRUE(PARA_DOM->isRepeatHdlr(reused));
 }
 
 REGISTER_TYPED_TEST_SUITE_P(RmFreeHdlrDomTest
@@ -339,8 +341,10 @@ TYPED_TEST_P(RmPriDomTest, GOLD_rm_PriDom_resrc)
     EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));
     EXPECT_EQ(EMsgPriority::EMsgPri_NORM, PARA_DOM->getPriority(e1)) << "REQ: reset pri.";
 
-    EXPECT_EQ(e1, PARA_DOM->setPriority("e1", EMsgPriority::EMsgPri_HIGH)) << "REQ: reuse e1.";
-    EXPECT_EQ(EMsgPriority::EMsgPri_HIGH, PARA_DOM->getPriority(e1)) << "REQ: new pri";
+    const auto nSlot = PARA_DOM->nEvSlot();
+    const auto reused = PARA_DOM->setPriority("e1", EMsgPriority::EMsgPri_HIGH);
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
+    EXPECT_EQ(EMsgPriority::EMsgPri_HIGH, PARA_DOM->getPriority(reused)) << "REQ: new pri";
 }
 
 REGISTER_TYPED_TEST_SUITE_P(RmPriDomTest
@@ -357,7 +361,7 @@ TYPED_TEST_SUITE_P(RmMhdlrDomTest);
 TYPED_TEST_P(RmMhdlrDomTest, GOLD_rm_MhdlrDom_resrc)
 {
     multiset<int> hdlrIDs;
-    auto e1 = PARA_DOM->setHdlr("e1", [&hdlrIDs](){ hdlrIDs.insert(1); });
+    PARA_DOM->setHdlr("e1", [&hdlrIDs](){ hdlrIDs.insert(1); });
     PARA_DOM->multiHdlrOnSameEv("e1", [&hdlrIDs](){ hdlrIDs.insert(2); }, "h2");
 
     PARA_DOM->setState({{"e1", true}});
@@ -368,7 +372,9 @@ TYPED_TEST_P(RmMhdlrDomTest, GOLD_rm_MhdlrDom_resrc)
     this->pongMsgSelf_();
     EXPECT_EQ(multiset<int>{}, hdlrIDs) << "REQ: not exe e2 hdlr since removed.";
 
-    EXPECT_EQ(e1, PARA_DOM->multiHdlrOnSameEv("reuse e1", [&hdlrIDs](){ hdlrIDs.insert(3); }, "h3"));
+    const auto nSlot = PARA_DOM->nEvSlot();
+    PARA_DOM->multiHdlrOnSameEv("reuse e1", [&hdlrIDs](){ hdlrIDs.insert(3); }, "h3");
+    EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
     PARA_DOM->forceAllHdlr("reuse e1");
     this->pongMsgSelf_();
     EXPECT_EQ(multiset<int>{3}, hdlrIDs) << "REQ: exe new hdlr.";

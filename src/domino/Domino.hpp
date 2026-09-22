@@ -134,6 +134,10 @@ private:
     std::unordered_map<EvName, Event> en_ev_;  // [evName]=event; event# may huge
     EvNames                           ev_en_;  // [event]=evName
     EVs                               effectEVs_;
+
+public:
+    // for soak test only
+    static inline void (*newEvHook_forUt)(const Domino&, const EvName&) noexcept = nullptr;
 };
 
 }  // namespace

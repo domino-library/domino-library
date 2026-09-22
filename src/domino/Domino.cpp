@@ -87,6 +87,10 @@ Domino::Event Domino::getEventBy(const EvName& aEvName) const noexcept
 // ***********************************************************************************************
 Domino::Event Domino::newEvent(const EvName& aEvName) noexcept
 {
+#ifdef IN_GTEST
+    if (newEvHook_forUt)
+        newEvHook_forUt(*this, aEvName);
+#endif
     if (!aEvName.empty() &&  // otherwise isspace() may UB
         (isspace(static_cast<unsigned char>(aEvName.front())) || isspace(static_cast<unsigned char>(aEvName.back())))
     )

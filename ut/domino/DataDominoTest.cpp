@@ -88,9 +88,10 @@ TYPED_TEST_P(DataDominoTest, correct_data_destructor)
 TYPED_TEST_P(DataDominoTest, nonConstInterface_shall_createUnExistEvent_withStateFalse)
 {
     // DataDomino::
-    EXPECT_EQ(nullptr, PARA_DOM->getData("e1").get()) << "REQ: get null for nonexist ev";
-    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("e1")) << "REQ: nonexistent";
-    EXPECT_FALSE(PARA_DOM->state("e1"));
+    (void)PARA_DOM->getData("dat-absent");
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("dat-absent")) << "REQ: getData does not create";
+    EXPECT_EQ(nullptr, PARA_DOM->getData("dat-absent").get()) << "REQ: get null for nonexistent ev";
+    EXPECT_FALSE(PARA_DOM->state("dat-absent"));
 
     EXPECT_TRUE(PARA_DOM->replaceDataOK("e2", MAKE_PTR<int>(0)))  // REQ: any type data (5th=int)
         << "REQ: replace data ok";

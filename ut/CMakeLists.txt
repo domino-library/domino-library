@@ -28,3 +28,4 @@ target_link_libraries(lib_ut  PUBLIC
     gtest
     gmock
 )
+target_compile_definitions(lib_domino  PRIVATE  IN_GTEST)  # newEvHook_forUt call in Domino.cpp
