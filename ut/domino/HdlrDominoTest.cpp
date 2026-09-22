@@ -311,16 +311,14 @@ TYPED_TEST_P(NofreeHdlrDominoTest, rmHdlrOnRoad_thenReAdd_noCallbackUntilReTrigg
 }
 TYPED_TEST_P(NofreeHdlrDominoTest, hdlrOnRoad_thenRmDom_noCrash_noLeak)
 {
-    PARA_DOM->setHdlr("event", this->hdlr0_);
-    PARA_DOM->setState({{"event", true}});
-    EXPECT_EQ(1U, MSG_SELF->nMsg(EMsgPri_NORM));  // 1 cb on road
-
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this)) << "REQ: rm dom";
+    {
+        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());  // local; process dom stays
+        dom->setHdlr("event", this->hdlr0_);
+        dom->setState({{"event", true}});
+        EXPECT_EQ(1U, MSG_SELF->nMsg(EMsgPri_NORM));  // 1 cb on road
+    }  // REQ: rm dom
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: no cb
-
-    // restore env
     this->pongMsgSelf_();
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TypeParam>(this->uniLogName()), *this));
 }
 
 #define FORCE_CALL

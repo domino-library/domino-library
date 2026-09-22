@@ -258,15 +258,13 @@ TYPED_TEST_P(FreeHdlrDominoTest, except_repeatedHdlr)
 TYPED_TEST_P(FreeHdlrDominoTest, BugFix_noCrash_whenRmDom)
 {
     EXPECT_CALL(*this, h7()).Times(0);
-    PARA_DOM->setHdlr("e1", [&](){ this->h7(); });
-    PARA_DOM->setState({{"e1", true}});
-    ASSERT_TRUE(MSG_SELF->nMsg());
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this))
-        << "REQ: no mem leak when rm MsgSelf with h7 in msg queue";
-
-    // restore env
+    {
+        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());  // local; process dom stays
+        dom->setHdlr("e1", [&](){ this->h7(); });
+        dom->setState({{"e1", true}});
+        ASSERT_TRUE(MSG_SELF->nMsg());
+    }  // REQ: no mem leak when rm dom with h7 in msg queue
     this->pongMsgSelf_();
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TypeParam>(this->uniLogName()), *this));
 }
 
 #define ID_STATE
