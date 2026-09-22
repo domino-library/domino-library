@@ -39,10 +39,10 @@ jobs:
       run: sudo apt-get update && sudo apt-get install valgrind
 
     - name: make ut
-      run: cmake -Dci=cov -DCMAKE_CXX_COMPILER="g++" . && make -j
+      run: cmake -Dci=cov -DCMAKE_CXX_COMPILER="g++" -S . -B build-cov && cmake --build build-cov -j
 
     - name: ut
-      run: SLICE=always-malloc G_DEBUG=gc-friendly valgrind -v --tool=memcheck --leak-check=full --num-callers=40 --log-file=ut/gcovr/cov.valgrind.log --error-exitcode=6 ./ut_exe --gtest_brief=1
+      run: SLICE=always-malloc G_DEBUG=gc-friendly valgrind -v --tool=memcheck --leak-check=full --num-callers=40 --log-file=build-cov/cov.valgrind.log --error-exitcode=6 ./build-cov/ut_exe --gtest_brief=1
 
     - name: install gcovr
       run: pip install gcovr
@@ -55,13 +55,13 @@ jobs:
       with:
         name: coverage-report
         path: |
-          ./ut/gcovr/cov.*
-          ./*gcov
+          build-cov/cov.*
+          build-cov/*.gcov.json.gz
 
     - uses: codecov/codecov-action@v7
       if: always()
       with:
-        files: ut/gcovr/cov.xml
+        files: build-cov/cov.xml
         disable_search: true
         slug: domino-library/domino-library
         flags: ci_main

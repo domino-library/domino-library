@@ -1,4 +1,4 @@
-# in-source cmake (CI: cmake .)
+# in-source cmake
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
@@ -23,11 +23,11 @@ ut_exe.exe
 *.pdb
 *.ilk
 
-# coverage / valgrind (written next to sources or ut/gcovr/)
+# coverage (reports live in build-cov/)
 *.gcda
 *.gcno
 *.gcov
-ut/gcovr/cov.*
+*.gcov.json.gz
 
 # optional out-of-source dirs
 /build/

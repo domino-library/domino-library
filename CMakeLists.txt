@@ -115,6 +115,19 @@ add_custom_target(soak
     USES_TERMINAL
 )
 
+# make cov  (ci=cov only: fresh .gcda, then gcovr; reports land in this build dir)
+if(ci STREQUAL "cov")
+    add_custom_target(cov
+        COMMAND find . -name "*.gcda" -delete
+        COMMAND ./ut_exe --gtest_brief=1
+        COMMAND $ENV{HOME}/.local/bin/gcovr -k --config ${CMAKE_SOURCE_DIR}/ut/gcovr/gcovr.cfg
+        DEPENDS ut_exe
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        USES_TERMINAL
+        VERBATIM
+    )
+endif()
+
 # simplify "make help"
 set(CMAKE_SKIP_PREPROCESSED_SOURCE_RULES  true)
 set(CMAKE_SKIP_ASSEMBLY_SOURCE_RULES      true)
