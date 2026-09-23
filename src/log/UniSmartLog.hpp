@@ -50,17 +50,6 @@ public:
     void needLog() const noexcept { smartLog_->needLog(); }  // flag to dump
     const LogName& uniLogName() const noexcept { return uniLogName_; }
     static size_t nLog() noexcept { return name_log_S_.size(); }
-    // soak: OA/default logs never die; discard success text, do not name_log_S_.clear()
-    static void dropAllBuf_forUt() noexcept
-    {
-        for (auto&& name_log : name_log_S_)
-            name_log.second->dropBuf();
-    }
-    static void forceSaveAll_forUt() noexcept
-    {
-        for (auto&& name_log : name_log_S_)
-            name_log.second->forceSave();
-    }
 
 private:
     // -------------------------------------------------------------------------------------------
@@ -77,6 +66,18 @@ public:
     // MT safe : no
     // mem safe: yes
 public:
+    // soak: OA/default logs never die; discard success text, do not name_log_S_.clear()
+    static void dropAllBuf_forUt() noexcept
+    {
+        for (auto&& name_log : name_log_S_)
+            name_log.second->dropBuf();
+    }
+    static void forceSaveAll_forUt() noexcept
+    {
+        for (auto&& name_log : name_log_S_)
+            name_log.second->forceSave();
+    }
+
     static void dumpAll_forUt()  // for ut case clean at the end; mem-risk=use-after-free, so ut ONLY
     {
         defaultUniLog_.oneLog().forceSave();  // dump

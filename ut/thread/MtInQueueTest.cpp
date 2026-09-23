@@ -18,10 +18,8 @@
 #include "UniPtr.hpp"
 #include "UtSoak.hpp"
 
-#define IN_GTEST
 #include "MT_PingMainTH.hpp"
 #include "MtInQueue.hpp"
-#undef IN_GTEST
 
 using namespace std;
 using namespace testing;

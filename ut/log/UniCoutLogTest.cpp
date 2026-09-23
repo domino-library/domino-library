@@ -5,9 +5,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 // ***********************************************************************************************
-#define IN_GTEST
 #include "UniCoutLog.hpp"
-#undef IN_GTEST
 
 #include "StrCoutFSL.hpp"
 

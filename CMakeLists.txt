@@ -28,12 +28,12 @@ if(ci  STREQUAL  "cov")
     message("!!! coverage & valgrind(only need -g -fno-omit-frame-pointer)")
     add_compile_options(--coverage -fPIC -O0 -fprofile-abs-path -g)  # gcov + valgrind req
     add_link_options(--coverage)                                     # gcov req
-    add_compile_definitions(SMART_LOG WITH_HID_LOG)  # more info to debug ci
+    add_compile_definitions(SMART_LOG WITH_HID_LOG IN_GTEST)  # more info to debug ci
     set(_cxx_std  cxx_std_20)  # try c++20/23 to see cov rate inc or not
 
 elseif(ci  STREQUAL  "asan")
     message("!!! asan+lsan+ubsan for: use-after-free, double-free, out-of-bound, leak, undef behavior")
-    add_compile_definitions(_FORTIFY_SOURCE=2)     # buffer overflow checks
+    add_compile_definitions(_FORTIFY_SOURCE=2 IN_GTEST)  # buffer overflow checks
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
     add_compile_options(-O2)  # required for FORTIFY_SOURCE
@@ -44,7 +44,7 @@ elseif(ci  STREQUAL  "asan")
 
 elseif(ci  STREQUAL  "tsan")  # asan/lsan/msan cover by valgrind(memcheck)
     message("!!! SANITIZE for: thread")
-    add_compile_definitions(_FORTIFY_SOURCE=2)     # buffer overflow checks
+    add_compile_definitions(_FORTIFY_SOURCE=2 IN_GTEST)  # buffer overflow checks
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
     add_compile_options(-O2)  # required for FORTIFY_SOURCE
@@ -63,8 +63,7 @@ elseif(ci  STREQUAL  "release")
     # - DNDEBUG                         : disable assert in hot path
     # NOTE: -flto is intentionally OFF here; with our toolchain it merges all blocks back into a
     #       single .text and defeats the section partitioning we want to verify.
-    message("!!! release: max perf, hot/cold sections separated by compiler")
-    add_compile_definitions(DOMLIB_UT)  # keep GOLD_perf_mem benchmark active
+    message("!!! release: max perf, hot/cold sections separated by compiler; no ut/")
     add_compile_options(-O3 -DNDEBUG)
     add_compile_options(-freorder-blocks-and-partition -freorder-functions)
     add_compile_options(-ffunction-sections -fdata-sections)
@@ -73,47 +72,50 @@ elseif(ci  STREQUAL  "release")
 else()
     message("!!! UT only - no cov, no SANITIZE check etc")
     add_compile_options(-O1)  # fastest build+ut (1-cpp-change=5s, vs 45s of -g)
-    add_compile_definitions(DOMLIB_UT)  # benchmark etc
+    add_compile_definitions(DOMLIB_UT IN_GTEST)  # benchmark etc
 endif()
 
 #add_compile_options(-fno-exceptions)  # inc branch coverage
 
-add_executable(ut_exe)
-
-# googletest via FetchContent (always latest, shallow clone to min download)
-include(FetchContent)
-FetchContent_Declare(googletest
-    GIT_REPOSITORY  https://github.com/google/googletest.git
-    GIT_TAG         main
-    GIT_SHALLOW     TRUE
-)
-FetchContent_MakeAvailable(googletest)
-
 add_subdirectory(src)
-add_subdirectory(ut)
+
+if(NOT ci STREQUAL "release")
+    add_executable(ut_exe)
+
+    # googletest via FetchContent (always latest, shallow clone to min download)
+    include(FetchContent)
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY  https://github.com/google/googletest.git
+        GIT_TAG         main
+        GIT_SHALLOW     TRUE
+    )
+    FetchContent_MakeAvailable(googletest)
+
+    add_subdirectory(ut)
+
+    target_link_libraries(ut_exe  PRIVATE
+        lib_domino
+        lib_ut
+        gtest_main
+    )
+
+    # make run
+    add_custom_target(run
+        COMMAND  ./ut_exe --gtest_brief=0
+        DEPENDS  ut_exe
+    )
+
+    # make soak  (not CI; flags in soak.sh)
+    add_custom_target(soak
+        COMMAND  bash ${CMAKE_SOURCE_DIR}/ut/soak.sh
+        DEPENDS  ut_exe
+        WORKING_DIRECTORY  ${CMAKE_BINARY_DIR}
+        USES_TERMINAL
+    )
+endif()
 
 # C++ standard on targets (decided per ci mode above)
 target_compile_features(lib_domino  PUBLIC  ${_cxx_std})
-
-target_link_libraries(ut_exe  PRIVATE
-    lib_domino
-    lib_ut
-    gtest_main
-)
-
-# make run
-add_custom_target(run
-    COMMAND  ./ut_exe --gtest_brief=0
-    DEPENDS  ut_exe
-)
-
-# make soak  (not CI; flags in soak.sh)
-add_custom_target(soak
-    COMMAND  bash ${CMAKE_SOURCE_DIR}/ut/soak.sh
-    DEPENDS  ut_exe
-    WORKING_DIRECTORY  ${CMAKE_BINARY_DIR}
-    USES_TERMINAL
-)
 
 # make cov  (ci=cov only: fresh .gcda, then gcovr; reports land in this build dir)
 if(ci STREQUAL "cov")

@@ -14,9 +14,7 @@
 #include <thread>
 #include <type_traits>
 
-#define IN_GTEST
 #include "ThreadBack.hpp"
-#undef IN_GTEST
 
 #include "AsyncBack.hpp"
 #include "MT_PingMainTH.hpp"

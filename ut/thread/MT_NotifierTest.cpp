@@ -15,10 +15,8 @@
 
 #include "UniLog.hpp"
 
-#define IN_GTEST
 #include "MT_Notifier.hpp"
 #include "MT_PingMainTH.hpp"
-#undef IN_GTEST
 
 using namespace std;
 using namespace testing;

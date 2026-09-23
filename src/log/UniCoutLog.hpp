@@ -42,8 +42,6 @@ public:
     static void needLog() noexcept {}
     static LogName uniLogName() noexcept { return ULN_DEFAULT; }
     static size_t nLog() noexcept { return 1; }
-    static void dropAllBuf_forUt() noexcept {}     // SmartLog dual; cout has no buf
-    static void forceSaveAll_forUt() noexcept {}   // already on cout
 
     [[nodiscard]] static bool setLogFileOK(const std::string& aFileName) noexcept;
 
@@ -66,6 +64,9 @@ public:
     // MT safe : no (since nLogLine_ is not atomic & no worth for ut only)
     // mem safe: yes
 public:
+    static void dropAllBuf_forUt() noexcept {}    // SmartLog dual; cout has no buf
+    static void forceSaveAll_forUt() noexcept {}  // already on cout
+
     static void dumpAll_forUt() {  // for ut case clean at the end
         nLogLine_ = 0;
         out_ = &std::cout;
