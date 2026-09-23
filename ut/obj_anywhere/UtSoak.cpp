@@ -6,6 +6,7 @@
 // ***********************************************************************************************
 #include <gtest/gtest.h>
 
+#include "UtInitObjAnywhere.hpp"
 #include "UtSoak.hpp"
 
 namespace rlib
@@ -19,8 +20,13 @@ struct SoakIterListener : testing::EmptyTestEventListener
     }
     void OnTestIterationEnd(const testing::UnitTest& ut, int it) override
     {
+        auto nEv = [](auto p) { return p ? p->evNames().size() : 0u; };
         std::cerr << "iter=" << it << " seed=" << ut.random_seed()
-            << " rss=" << rssBytes() << '\n' << std::flush;
+            << " rss=" << rssBytes()
+            << " nEv=" << nEv(ObjAnywhere::getObj<MinRmEvDom>().get())
+            << ',' << nEv(ObjAnywhere::getObj<MaxNofreeDom>().get())
+            << ',' << nEv(ObjAnywhere::getObj<MaxDom>().get())
+            << '\n' << std::flush;
     }
 };
 
