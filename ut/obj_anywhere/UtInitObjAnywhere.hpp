@@ -9,16 +9,13 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
-#include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "UniLog.hpp"
-#include "UniPtr.hpp"
 #include "MsgSelf.hpp"
 #include "ObjAnywhere.hpp"
 #include "UtSoak.hpp"
@@ -36,9 +33,7 @@
 
 // ***********************************************************************************************
 // UT req: combined domino shall pass all UT
-#define DOMINO      (ObjAnywhere::getObj<MaxDom>      ().get())
-#define NO_FREE_DOM (ObjAnywhere::getObj<MaxNofreeDom>().get())
-#define PARA_DOM    (ObjAnywhere::getObj<TypeParam>   ().get())
+#define PARA_DOM (ObjAnywhere::getObj<TypeParam>().get())
 
 using namespace testing;
 
@@ -71,19 +66,14 @@ struct CanRmAllHdlr<aT, std::void_t<decltype(std::declval<aT>().rmAllHdlr(std::d
     : std::true_type {};
 
 // names this case passed to newEvent; absent key = first run, drop the whole graph
-inline std::unordered_map<std::string, std::unordered_set<Domino::EvName>> s_caseEv_;
+inline std::unordered_map<const TestInfo*, std::unordered_set<Domino::EvName>> s_caseEv_;
 inline const Domino* s_noteDom_ = nullptr;
 inline std::unordered_set<Domino::EvName>* s_noteSet_ = nullptr;
 
 inline void noteNewEv_forUt(const Domino& dom, const Domino::EvName& name) noexcept
 {
-    if (&dom == s_noteDom_ && s_noteSet_)
+    if (&dom == s_noteDom_)
         s_noteSet_->insert(name);
-}
-inline std::string curUtName_()
-{
-    const auto* info = UnitTest::GetInstance()->current_test_info();
-    return std::string(info->test_suite_name()) + "." + info->name();
 }
 
 // ***********************************************************************************************
@@ -95,7 +85,7 @@ struct UtInitObjAnywhere : public UniLog, public Test
     {
         if (!ObjAnywhere::isInit())
         {
-            ObjAnywhere::init(*this);
+            ObjAnywhere::init(*this);  // 1 ObjAnywhere in soak process since static
 
             EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MsgSelf>(uniLogName()), *this))
                 << "REQ: init MsgSelf";
@@ -128,18 +118,20 @@ struct UtInitObjAnywhere : public UniLog, public Test
 
         // - example how main() callback MsgSelf to handle all msgs
         // - this lambda hides all impl details but a common interface = function<void()>
-        pongMsgSelf_ = [msgSelf = MSG_SELF]{ if (msgSelf) msgSelf->handleAllMsg(); };
+        pongMsgSelf_ = [msgSelf = MSG_SELF]{ msgSelf->handleAllMsg(); };
     }
     virtual void dumpIfFail()
     {
         if (!HasFailure()) return;
         std::cerr << "nMsg=" << (MSG_SELF ? MSG_SELF->nMsg() : 0) << '\n';
     }
+    virtual void cleanup_() {}
     void TearDown() override
     {
         dumpIfFail();
         if (isSoak() && HasFailure()) soakReplayAndAbort();  // body fail; graph still intact
-        // rm dummy hdlr that still in queue, may impact low-pri (1/ping-pong)
+        cleanup_();  // before drain MsgSelf, so rm-ed hdlr/dom won't fire
+        // rm CB still in queue, may impact low-pri (1/ping-pong)
         if (MSG_SELF)
             while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();  // low-pri: 1 msg per handleAllMsg
         dumpIfFail();
@@ -173,53 +165,40 @@ struct UtParaDom : public UtInitObjAnywhere
     {
         if constexpr (CanRmEV<TypeParam>::value)
         {
-            if (PARA_DOM)
+            // find my evs created in last run
+            const auto [rec, firstRun] = s_caseEv_.try_emplace(UnitTest::GetInstance()->current_test_info());
+            if (firstRun)  // 1 case's first run in soak, rm all ev since no record
             {
-                const auto rec = s_caseEv_.find(curUtName_());
-                if (rec == s_caseEv_.end())  // first run, drop the whole graph
-                {
-                    for (auto&& en : PARA_DOM->evNames())
-                        EXPECT_TRUE(PARA_DOM->rmEvOK(en));
-                }
-                else  // not first run, drop only new evs - soak as real world
-                {
-                    for (auto&& en : rec->second)
-                        (void)PARA_DOM->rmEvOK(en);
-                }
-                if (MSG_SELF)
-                {
-                    EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
-                }
-                s_noteDom_ = PARA_DOM.get();
-                s_noteSet_ = &s_caseEv_[curUtName_()];
-                Domino::newEvHook_forUt = noteNewEv_forUt;
+                for (auto&& en : PARA_DOM->evNames())
+                    EXPECT_TRUE(PARA_DOM->rmEvOK(en));
             }
+            else  // after first run, drop only my evs - soak as real world
+            {
+                for (auto&& en : rec->second)
+                    (void)PARA_DOM->rmEvOK(en);
+            }
+            EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
+            s_noteDom_ = PARA_DOM.get();
+            s_noteSet_ = &rec->second;
+            Domino::newEvHook_forUt = noteNewEv_forUt;
         }
     }
-    void TearDown() override
+    void cleanup_() override
     {
-        dumpIfFail();
-        if (isSoak() && HasFailure()) soakReplayAndAbort();
-        if (ObjAnywhere::isInit() && PARA_DOM != nullptr)
+        if constexpr (CanRmEV<TypeParam>::value)
         {
-            if constexpr (CanRmEV<TypeParam>::value)
+            Domino::newEvHook_forUt = nullptr;
+            if constexpr (CanRmAllHdlr<TypeParam>::value)
             {
-                Domino::newEvHook_forUt = nullptr;
-                s_noteDom_ = nullptr;
-                s_noteSet_ = nullptr;
-                if constexpr (CanRmAllHdlr<TypeParam>::value)
-                {
-                    for (auto&& en : PARA_DOM->evNames())  // rm all hdlr in soak - avoid CB invalid *this
-                        PARA_DOM->rmAllHdlr(en);
-                }
-            }
-            else
-            {
-                EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this));
-                EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<TypeParam>(uniLogName()), *this));
+                for (auto&& en : PARA_DOM->evNames())  // rm all hdlr in soak - avoid CB invalid *this
+                    PARA_DOM->rmAllHdlr(en);
             }
         }
-        UtInitObjAnywhere::TearDown();
+        else
+        {
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this));
+            EXPECT_TRUE(ObjAnywhere::newObjOK<TypeParam>(uniLogName()));
+        }
     }
 };
 

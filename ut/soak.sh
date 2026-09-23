@@ -16,6 +16,7 @@
 # - no soak:
 #   . ObjAnywhere, DataStore, MsgSelf: covered by dom* (real)
 #   . SafePtr, MT_Notifier: no process-lifetime object of their own
+#   . PARA dom w/o rmEvOK: make no sense in soad
 #   . ThPoolBack.performance: low ROI
 #   . GOLD_entryFn_notify_insteadof_timeout: GTEST_SKIP in case (wall-clock vs nice)
 

@@ -68,15 +68,12 @@ struct THREAD_BACK_TEST : public UtInitObjAnywhere
             << " nQ=" << mt_getQ().size(true) << '\n';
         UtInitObjAnywhere::dumpIfFail();
     }
-    void TearDown() override
+    void cleanup_() override
     {
-        dumpIfFail();
-        if (isSoak() && HasFailure()) soakReplayAndAbort();
         drainDoneFut(threadBack_);
         threadBack_.mt_nDoneFut() = 0;  // bugFix case may leave a stale counter
         EXPECT_EQ(0, threadBack_.nFut()) << "REQ: handle all";
         mt_getQ().clearAll();
-        UtInitObjAnywhere::TearDown();
     }
 
     // -------------------------------------------------------------------------------------------
