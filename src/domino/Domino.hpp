@@ -135,7 +135,7 @@ private:
     EvNames                           ev_en_;  // [event]=evName
     EVs                               effectEVs_;
 
-#ifdef IN_GTEST  // for soak test only
+#ifdef IN_ALL_UT  // for soak test only
 public:
     static inline void (*newEvHook_forUt)(const Domino&, const EvName&) noexcept = nullptr;
 #endif

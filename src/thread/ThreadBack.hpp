@@ -92,7 +92,7 @@ protected:
     size_t  maxParallel_ = 0;  // can't rely on fut_backFN_S_.capacity() newTaskOK() can exceed it
 
     // -------------------------------------------------------------------------------------------
-#ifdef IN_GTEST
+#ifdef IN_ALL_UT
 public:
     auto& mt_nDoneFut() { return mt_nDoneFut_; }
     void waitAllFut_forUt()

@@ -28,12 +28,12 @@ if(ci  STREQUAL  "cov")
     message("!!! coverage & valgrind(only need -g -fno-omit-frame-pointer)")
     add_compile_options(--coverage -fPIC -O0 -fprofile-abs-path -g)  # gcov + valgrind req
     add_link_options(--coverage)                                     # gcov req
-    add_compile_definitions(SMART_LOG WITH_HID_LOG IN_GTEST)  # more info to debug ci
+    add_compile_definitions(SMART_LOG WITH_HID_LOG IN_ALL_UT)  # more info to debug ci
     set(_cxx_std  cxx_std_20)  # try c++20/23 to see cov rate inc or not
 
 elseif(ci  STREQUAL  "asan")
     message("!!! asan+lsan+ubsan for: use-after-free, double-free, out-of-bound, leak, undef behavior")
-    add_compile_definitions(_FORTIFY_SOURCE=2 IN_GTEST)  # buffer overflow checks
+    add_compile_definitions(_FORTIFY_SOURCE=2 IN_ALL_UT)  # buffer overflow checks
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
     add_compile_options(-O2)  # required for FORTIFY_SOURCE
@@ -44,7 +44,7 @@ elseif(ci  STREQUAL  "asan")
 
 elseif(ci  STREQUAL  "tsan")  # asan/lsan/msan cover by valgrind(memcheck)
     message("!!! SANITIZE for: thread")
-    add_compile_definitions(_FORTIFY_SOURCE=2 IN_GTEST)  # buffer overflow checks
+    add_compile_definitions(_FORTIFY_SOURCE=2 IN_ALL_UT)  # buffer overflow checks
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
     add_compile_options(-O2)  # required for FORTIFY_SOURCE
@@ -72,7 +72,7 @@ elseif(ci  STREQUAL  "release")
 else()
     message("!!! UT only - no cov, no SANITIZE check etc")
     add_compile_options(-O1)  # fastest build+ut (1-cpp-change=5s, vs 45s of -g)
-    add_compile_definitions(DOMLIB_UT IN_GTEST)  # benchmark etc
+    add_compile_definitions(IN_SPECIAL_UT IN_ALL_UT)  # benchmark etc
 endif()
 
 #add_compile_options(-fno-exceptions)  # inc branch coverage

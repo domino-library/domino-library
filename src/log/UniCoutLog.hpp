@@ -59,7 +59,7 @@ public:
     static std::ofstream           file_;
     static std::atomic<std::FILE*> trcFp_;  // TRC()
 
-#ifdef IN_GTEST
+#ifdef IN_ALL_UT
     // -------------------------------------------------------------------------------------------
     // MT safe : no (since nLogLine_ is not atomic & no worth for ut only)
     // mem safe: yes

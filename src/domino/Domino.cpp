@@ -87,7 +87,7 @@ Domino::Event Domino::getEventBy(const EvName& aEvName) const noexcept
 // ***********************************************************************************************
 Domino::Event Domino::newEvent(const EvName& aEvName) noexcept
 {
-#ifdef IN_GTEST
+#ifdef IN_ALL_UT
     if (newEvHook_forUt)
         newEvHook_forUt(*this, aEvName);
 #endif

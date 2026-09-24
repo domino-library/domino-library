@@ -39,7 +39,7 @@ private:
     sem_t mt_sem_;
 
     // -------------------------------------------------------------------------------------------
-#ifdef IN_GTEST
+#ifdef IN_ALL_UT
 public:
     // eat leftover posts; do not destroy the sem (workers may still post)
     void reset() noexcept

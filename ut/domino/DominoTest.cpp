@@ -530,7 +530,7 @@ INSTANTIATE_TYPED_TEST_SUITE_P(PARA, DominoTest, AnyDom);
 // ***********************************************************************************************
 TEST(DominoMemTest, GOLD_perf_mem)  // can pass bybuild/make -j run > /tmp/ut.log
 {
-#ifndef DOMLIB_UT
+#ifndef IN_SPECIAL_UT
     GTEST_SKIP() << "env-sensitive benchmark, run only without -Dci";
 #endif
     // all typical ops: newEvent + setPrev + setState(true) + setState(false)

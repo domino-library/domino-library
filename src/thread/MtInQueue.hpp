@@ -82,7 +82,7 @@ private:
     std::vector<std::pair<std::type_index, EleHdlr>> tid_hdlr_S_;
 
     // -------------------------------------------------------------------------------------------
-#ifdef IN_GTEST
+#ifdef IN_ALL_UT
 public:
     [[nodiscard]] std::unique_lock<std::mutex> lockBackdoor() { return std::unique_lock(mt_mutex_); }
 #endif
