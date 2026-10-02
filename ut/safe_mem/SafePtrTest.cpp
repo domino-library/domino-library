@@ -51,12 +51,19 @@ void onBigFree(void* aPtr) noexcept
 
 // noinline: -O2 (asan/tsan) inlines these into callers, then -Wmismatched-new-delete
 // sees free() on a new-expression. The pair is malloc/free; keep the bodies out of line.
+// nothrow new too: get_temporary_buffer uses it; our sized delete frees it.
+// Without this, ASan's nothrow new is paired with our free().
 [[gnu::noinline]] void* operator new(size_t aSize)
 {
     void* p = std::malloc(aSize);
     if (!p) throw std::bad_alloc();
     onBigAlloc(p, aSize);
     return p;
+}
+[[gnu::noinline]] void* operator new(size_t aSize, const std::nothrow_t&) noexcept
+{
+    try { return ::operator new(aSize); }
+    catch (...) { return nullptr; }
 }
 [[gnu::noinline]] void operator delete(void* aPtr) noexcept
 {
