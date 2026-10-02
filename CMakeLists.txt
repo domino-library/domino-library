@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION  3.16)
 
 # ------------------------------------------------------------------------------------------------
-project(ut_exe  CXX)  # as early as possible, eg must before CMAKE_CXX_FLAGS
+project(ut_exe  CXX)  # as early as possible, eg must before CMAKE_CXX_COMPILER_ID
 
 set(CMAKE_CXX_EXTENSIONS  OFF)
 
@@ -15,9 +15,9 @@ set(CMAKE_CXX_EXTENSIONS  OFF)
 # - 1 knob replaces CMAKE_BUILD_TYPE: each mode bundles -O/-g, sanitizer/coverage and macros
 set(ci  ""  CACHE STRING  "UT build mode: <empty>=fast UT | smart | cov | asan | tsan | release")
 set(_ci_allowed  ""  smart  cov  asan  tsan  release)
-set_property(CACHE ci  PROPERTY STRINGS  ${_ci_allowed})
+set_property(CACHE ci  PROPERTY STRINGS  "${_ci_allowed}")  # quoted: keep the empty entry
 if(NOT ci  IN_LIST  _ci_allowed)
-    message(FATAL_ERROR  "unknown ci='${ci}', expect one of: smart cov asan tsan release (or empty)")
+    message(FATAL_ERROR  "unknown ci='${ci}', expect one of: '${_ci_allowed}'")
 endif()
 if(CMAKE_BUILD_TYPE)
     message(FATAL_ERROR  "this project selects flags via -Dci=<mode>, not CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'")
@@ -25,34 +25,27 @@ endif()
 set(_cxx_std  cxx_std_17)  # 17 since "if constexpr()"
 
 if(ci  STREQUAL  "cov")
-    message("!!! coverage & valgrind(only need -g -fno-omit-frame-pointer)")
+    message(STATUS "ci=cov: coverage; valgrind needs -g -fno-omit-frame-pointer")
     add_compile_options(--coverage -fPIC -O0 -fprofile-abs-path -g)  # gcov + valgrind req
     add_link_options(--coverage)                                     # gcov req
-    add_compile_definitions(SMART_LOG WITH_HID_LOG IN_ALL_UT)  # more info to debug ci
+    add_compile_definitions(SMART_LOG WITH_HID_LOG)  # more info to debug ci
     set(_cxx_std  cxx_std_20)  # try c++20/23 to see cov rate inc or not
 
-elseif(ci  STREQUAL  "asan")
-    message("!!! asan+lsan+ubsan for: use-after-free, double-free, out-of-bound, leak, undef behavior")
-    add_compile_definitions(SMART_LOG IN_ALL_UT)
-    add_compile_options(-g -fno-omit-frame-pointer)
-    add_compile_options(-fstack-protector-strong)  # stack overflow protection
-    add_compile_options(-O2)
-    add_compile_options(-fsanitize=address,undefined)
-    add_compile_options(-fno-sanitize-recover=undefined)  # UBSan stops; ASan already does
-
-    add_link_options(-fsanitize=address,undefined)
-    add_link_options(-fstack-protector-strong)     # ensure stack protector runtime is linked
-
-elseif(ci  STREQUAL  "tsan")  # asan/lsan/msan cover by valgrind(memcheck)
-    message("!!! SANITIZE for: thread")
-    add_compile_definitions(IN_ALL_UT)  # UniCoutLog; halt_on_error is in UtSoak.cpp
-    add_compile_options(-g -fno-omit-frame-pointer)
-    add_compile_options(-fstack-protector-strong)  # stack overflow protection
-    add_compile_options(-O2)
-    add_compile_options(-fsanitize=thread)
-
-    add_link_options(-fsanitize=thread)
-    add_link_options(-fstack-protector-strong)     # ensure stack protector runtime is linked
+elseif(ci  STREQUAL  "asan" OR ci  STREQUAL  "tsan")
+    # shared: debug info + -O2. asan also stack-protects; tsan does not (unrelated to races)
+    add_compile_options(-g -fno-omit-frame-pointer -O2)
+    if(ci STREQUAL "asan")
+        message(STATUS "ci=asan: asan+lsan+ubsan (use-after-free, double-free, out-of-bound, leak, undef)")
+        add_compile_definitions(SMART_LOG)
+        add_compile_options(-fstack-protector-strong)  # stack overflow; glibc already has __stack_chk_fail
+        add_compile_options(-fsanitize=address,undefined)
+        add_compile_options(-fno-sanitize-recover=undefined)  # UBSan stops; ASan already does
+        add_link_options(-fsanitize=address,undefined)
+    else()
+        message(STATUS "ci=tsan: thread; UniCoutLog; halt_on_error is in UtSoak.cpp")
+        add_compile_options(-fsanitize=thread)
+        add_link_options(-fsanitize=thread)
+    endif()
 
 elseif(ci  STREQUAL  "release")
     # release-perf build: cold/hot path separation comes from compiler flags, not source macros
@@ -61,11 +54,12 @@ elseif(ci  STREQUAL  "release")
     # - freorder-functions              : place mutually-called funcs adjacent (better i-cache)
     # - ffunction-sections/fdata-s.     : 1 section per func, lets linker drop dead code & re-pack hot
     # - Wl,--gc-sections                : actually drop unused sections at link time
-    # - DNDEBUG                         : disable assert in hot path
+    # - NDEBUG                          : disable assert in hot path
     # NOTE: -flto is intentionally OFF here; with our toolchain it merges all blocks back into a
     #       single .text and defeats the section partitioning we want to verify.
-    message("!!! release: max perf, hot/cold sections separated by compiler; no ut/")
-    add_compile_options(-O3 -DNDEBUG)
+    message(STATUS "ci=release: max perf, hot/cold sections separated by compiler; no ut/")
+    add_compile_definitions(NDEBUG)
+    add_compile_options(-O3)
     add_compile_options(-freorder-blocks-and-partition -freorder-functions)
     add_compile_options(-ffunction-sections -fdata-sections)
     add_link_options(-Wl,--gc-sections)
@@ -73,13 +67,18 @@ elseif(ci  STREQUAL  "release")
 else()
     # "" = fast UT; "smart" = same plus SmartLog (build-smart)
     add_compile_options(-O1)  # fastest build+ut (1-cpp-change=5s, vs 45s of -g)
-    add_compile_definitions(IN_SPECIAL_UT IN_ALL_UT)  # benchmark etc
+    add_compile_definitions(IN_SPECIAL_UT)  # benchmark etc
     if(ci STREQUAL "smart")
-        message("!!! fast UT + SmartLog")
+        message(STATUS "ci=smart: fast UT + SmartLog")
         add_compile_definitions(SMART_LOG)
     else()
-        message("!!! UT only - no cov, no SANITIZE check etc")
+        message(STATUS "ci=<empty>: fast UT, no cov, no sanitizer")
     endif()
+endif()
+
+# not release: soak/ut helpers. Must be before add_subdirectory(src); later targets do not see it.
+if(NOT ci STREQUAL "release")
+    add_compile_definitions(IN_ALL_UT)
 endif()
 
 #add_compile_options(-fno-exceptions)  # inc branch coverage
@@ -126,10 +125,14 @@ target_compile_features(lib_domino  PUBLIC  ${_cxx_std})
 
 # make cov  (ci=cov only: fresh .gcda, then gcovr; reports land in this build dir)
 if(ci STREQUAL "cov")
+    find_program(GCOVR gcovr HINTS "$ENV{HOME}/.local/bin")
+    if(NOT GCOVR)
+        message(FATAL_ERROR "gcovr not found (PATH or ~/.local/bin)")
+    endif()
     add_custom_target(cov
         COMMAND find . -name "*.gcda" -delete
         COMMAND ./ut_exe --gtest_brief=1
-        COMMAND $ENV{HOME}/.local/bin/gcovr -k --config ${CMAKE_SOURCE_DIR}/ut/gcovr/gcovr.cfg
+        COMMAND ${GCOVR} -k --config ${CMAKE_SOURCE_DIR}/ut/gcovr/gcovr.cfg
         DEPENDS ut_exe
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         USES_TERMINAL

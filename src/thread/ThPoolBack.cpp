@@ -65,6 +65,12 @@ void ThPoolBack::mt_threadMain_() noexcept
         // - other excepts (eg bad_alloc) are rare & hard-recover
         task();  // packaged_task saves exception in its future
 
+        // Drop the provider share before publishing completion. future::get()
+        // releases its share while unwinding into the caller's catch, which
+        // still reads e.what(). Destroying this task after the ping races
+        // that read (runtime_error's string freed on this thread).
+        task = {};
+
         // no lock so can only use MT_safe part in "this"
         mt_nDoneFut_.fetch_add(1, std::memory_order_release);
         mt_pingMainTH();  // always ping, or may wait long under low load
