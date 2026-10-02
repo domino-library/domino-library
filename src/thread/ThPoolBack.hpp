@@ -53,7 +53,12 @@ private:
     // -------------------------------------------------------------------------------------------
     std::vector<std::thread>  thPool_;
 
-    std::deque<std::packaged_task<SafePtr<void>()>>  mt_taskQ_;
+    struct MtTask_
+    {
+        MT_TaskEntryFN entry;
+        std::promise<SafePtr<void>> prom;
+    };
+    std::deque<MtTask_>  mt_taskQ_;
     std::mutex  mt_mutex_;
     std::condition_variable  mt_qCv_;
 
@@ -71,4 +76,5 @@ private:
 // 2024-07-09  CSZ       1)create
 // 2025-03-21  CSZ       2)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-04-09  CSZ       - can limit max tasks
+// 2026-10-02  CSZ       - count +1 before the future is ready
 // ***********************************************************************************************

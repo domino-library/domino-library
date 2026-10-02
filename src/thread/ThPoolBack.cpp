@@ -45,7 +45,7 @@ void ThPoolBack::mt_threadMain_() noexcept
 {
     for (;;)
     {
-        packaged_task<SafePtr<void>()> task;
+        MtTask_ job;
         {
             // - lock to prevent new task/notif until my mt_qCv_ sleep/wait-notif (ensure not loss notif)
             // - lock to prevent other thread steal task
@@ -57,22 +57,23 @@ void ThPoolBack::mt_threadMain_() noexcept
                 return;
             // mt_qCv_.wait(): lock then check predicate, so no need check mt_taskQ_.empty() here
 
-            task = move(mt_taskQ_.front());
+            job = move(mt_taskQ_.front());
             mt_taskQ_.pop_front();
         }
 
-        // - thread can continue when task() throw
+        // - thread can continue when entry() throws
         // - other excepts (eg bad_alloc) are rare & hard-recover
-        task();  // packaged_task saves exception in its future
+        SafePtr<void> ret;
+        std::exception_ptr eptr;
+        try { ret = job.entry(); }
+        catch (...) { eptr = std::current_exception(); }
+        job.entry = nullptr;  // drop captures before main runs backFN
 
-        // Drop the provider share before publishing completion. future::get()
-        // releases its share while unwinding into the caller's catch, which
-        // still reads e.what(). Destroying this task after the ping races
-        // that read (runtime_error's string freed on this thread).
-        task = {};
-
-        // no lock so can only use MT_safe part in "this"
-        mt_nDoneFut_.fetch_add(1, std::memory_order_release);
+        mt_nDoneFut_.fetch_add(1, std::memory_order_release);  // before ready: hdlDoneFut may take it on an older count
+        if (eptr)
+            job.prom.set_exception(move(eptr));
+        else
+            job.prom.set_value(move(ret));
         mt_pingMainTH();  // always ping, or may wait long under low load
     }
 }
@@ -110,11 +111,11 @@ bool ThPoolBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLo
         if (! ThreadBack::newTaskOK(mt_aEntryFN, aBackFN, oneLog))
             return false;
 
-        packaged_task<SafePtr<void>()> task(std::move(mt_aEntryFN));  // packaged_task can get_future()="task result"
-        fut_backFN_S_.push_back(Fut_BackFN{task.get_future(), std::move(aBackFN)});  // save future & backFN
+        MtTask_ job{std::move(mt_aEntryFN), {}};
+        fut_backFN_S_.push_back(Fut_BackFN{job.prom.get_future(), std::move(aBackFN)});
         {
             lock_guard lock(mt_mutex_);
-            mt_taskQ_.emplace_back(move(task));
+            mt_taskQ_.push_back(move(job));
         }
         mt_qCv_.notify_one();  // notify thread pool to run a new task
 

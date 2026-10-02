@@ -254,8 +254,6 @@ TEST_F(THREAD_BACK_TEST, hdlDoneFut_wrongThread_rejected)
         [] { return make_safe<bool>(true); },
         [&nBack](SafePtr<void>) { ++nBack; }));
     threadBack_.waitAllFut_forUt();
-    while (threadBack_.mt_nDoneFut().load(std::memory_order_acquire) == 0)
-        std::this_thread::yield();
 
     const auto wrongThreadHandled = std::async(std::launch::async, [&]()
     {
@@ -319,12 +317,13 @@ TEST_F(THREAD_BACK_TEST, bugFix_nDoneFut_before_futureReady)
         [](SafePtr<void>) {}
     )) << "REQ: newTaskOK";
 
-    threadBack_.mt_nDoneFut()++;  // force +1 before future ready, threadBack_ shall not crash
+    threadBack_.mt_nDoneFut()++;  // force +1 before future ready
+    EXPECT_EQ(0u, threadBack_.hdlDoneFut()) << "REQ: no crash, nothing ready";
 
-    // clean
     canEnd = true;
-    while (threadBack_.hdlDoneFut() == 0)
-        timedwait();
+    threadBack_.waitAllFut_forUt();
+    EXPECT_EQ(2u, threadBack_.mt_nDoneFut().load()) << "REQ: +1 visible once future ready";
+    EXPECT_EQ(1u, threadBack_.hdlDoneFut());
 }
 
 // - REQ: mt_getMainTH() returns the process's ONE logical main = the 1st caller; a later call from
