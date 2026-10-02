@@ -124,10 +124,11 @@ endif()
 target_compile_features(lib_domino  PUBLIC  ${_cxx_std})
 
 # make cov  (ci=cov only: fresh .gcda, then gcovr; reports land in this build dir)
+# CI installs gcovr after this configure and invokes it from PATH, so a miss here is not fatal.
 if(ci STREQUAL "cov")
     find_program(GCOVR gcovr HINTS "$ENV{HOME}/.local/bin")
     if(NOT GCOVR)
-        message(FATAL_ERROR "gcovr not found (PATH or ~/.local/bin)")
+        set(GCOVR gcovr)
     endif()
     add_custom_target(cov
         COMMAND find . -name "*.gcda" -delete
