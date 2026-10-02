@@ -12,8 +12,12 @@
 #ifndef __has_feature
 #define __has_feature(x) 0
 #endif
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) \
+    || __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+#include <sanitizer/common_interface_defs.h>
+#endif
 #if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
-// default continues after a race; make run, soak.sh, and a replay all stop
+// no compile flag for this; default continues. covers make run, soak.sh, ./ut_exe
 extern "C" const char* __tsan_default_options() { return "halt_on_error=1"; }
 #endif
 
@@ -41,5 +45,12 @@ struct SoakIterListener : testing::EmptyTestEventListener
 // relies on lib_ut being OBJECT lib; STATIC would drop this TU
 [[maybe_unused]] static const bool s_soakReg =
     isSoak() && (testing::UnitTest::GetInstance()->listeners().Append(new SoakIterListener), true);
+
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) \
+    || __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+// Die() skips gtest. line only: flush can fault (asan) or deadlock (tsan)
+[[maybe_unused]] static const bool s_sanDieReg =
+    isSoak() && (__sanitizer_set_death_callback([] { soakReplayLine(); }), true);
+#endif
 
 }  // namespace

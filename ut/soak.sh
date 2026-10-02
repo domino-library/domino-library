@@ -20,6 +20,9 @@
 #   . PARA dom w/o rmEvOK: make no sense in soad
 #   . ThPoolBack.performance: low ROI
 #   . GOLD_entryFn_notify_insteadof_timeout: GTEST_SKIP in case (wall-clock vs nice)
+# - asan rss climbs then plateaus (quarantine ~256MB + shadow); not a leak
+# - MALLOC_ARENA_MAX=1: glibc arenas only; asan/tsan replace malloc
+# - lsan checks at exit; this loop does not, so leaks are make run
 # - screen tail survives crash: soak.log + soak.log.1 (~10MB each) in the build dir; usage:
 #   tail -n 40 ~/dom/build/soak.log
 #   tail -n 40 ~/dom/build-smart/soak.log

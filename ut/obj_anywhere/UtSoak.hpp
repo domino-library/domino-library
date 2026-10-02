@@ -38,11 +38,16 @@ inline size_t rssBytes()
     return rss;
 }
 
+inline void soakReplayLine()
+{
+    std::cerr << "replay: SEED=" << soakSeed0_ << " ut/soak.sh --gtest_repeat="
+        << (soakIter_ + 1) << " rss=" << rssBytes() << '\n' << std::flush;
+}
+
 inline void soakReplayAndAbort()
 {
     UniLog::forceSaveAll_forUt();
-    std::cerr << "replay: SEED=" << soakSeed0_ << " ut/soak.sh --gtest_repeat="
-        << (soakIter_ + 1) << " rss=" << rssBytes() << '\n' << std::flush;
+    soakReplayLine();
     std::abort();
 }
 
