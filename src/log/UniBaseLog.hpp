@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <exception>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -51,13 +52,16 @@ namespace rlib { inline bool traceOn_ = (std::getenv("TRACE_OFF") == nullptr); }
 #define TRC(...) ((void)0)  // dummy, will be replaced by real
 
 // ***********************************************************************************************
-// - HID() is to be more debug but product code shall disable them
+// - HID(): off in release (no WITH_HID_LOG); on for debug
 // - HID() uses cout since UniSmartLog is NOT MT safe
-//   . under single thread, can change cout back to oneLog() for smart log
-// - HID() is MT safe also upon UniSmartLog
+// - MT safe : yes (UniCoutLog)
+//   . no crash cout; lines may mix
 #if WITH_HID_LOG
-#define HID(content) { std::cout << "cout[" << rlib::mt_timestamp() << "/HID/" \
-    << std::this_thread::get_id() << "] " << BUF(content) << std::dec << std::flush; }
+#define HID(content) do { \
+    std::lock_guard<std::recursive_mutex> guard_(rlib::coutMutex_()); \
+    std::cout << "cout[" << rlib::mt_timestamp() << "/HID/" \
+        << std::this_thread::get_id() << "] " << BUF(content) << std::dec << std::flush; \
+} while (0)
 #else
 #define HID(content) {}
 #endif
@@ -132,6 +136,16 @@ inline const char* mt_timestamp() noexcept
 }
 
 // ***********************************************************************************************
+// - shared by UniCoutLog lines and HID
+// - function-local static: a TU may call HID during its own static init
+// - recursive: HID (eg SafePtr::operator->) can run inside INF's << content, which already holds this lock
+inline std::recursive_mutex& coutMutex_() noexcept
+{
+    static std::recursive_mutex mutex_;
+    return mutex_;
+}
+
+// ***********************************************************************************************
 // - format TRC: "timestamp msg\n" into thread_local buf
 // - MT safe : yes
 // - mem safe: yes (ret valid until next call from same thread)
@@ -148,6 +162,7 @@ inline TrcBuf mt_formatTRC(const char* aFormat, va_list ap) noexcept
     return {buf, n};
 }
 
+// ***********************************************************************************************
 constexpr char ULN_DEFAULT[] = "DEFAULT";
 }  // namespace
 // ***********************************************************************************************

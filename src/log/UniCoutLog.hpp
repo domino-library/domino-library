@@ -6,6 +6,10 @@
  */
 // ***********************************************************************************************
 // - ISSUE/why:
+//   . MT safe log:
+//     . UniSmartLog is NOT; UniCoutLog is YES & simplest
+//     . INF/WRN/ERR/HID: MT safe
+//     . TRC: almost MT safe, except @fclose
 //   . encapsulate cout/file for eg:
 //     . UT
 //     . simplest log for debug
@@ -23,6 +27,7 @@
 #include <atomic>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 
 #include "UniBaseLog.hpp"
 
@@ -35,8 +40,31 @@ public:
     explicit UniCoutLog(const LogName&) noexcept {}  // compatible UniSmartLog
     UniCoutLog() = default;
 
-    static std::ostream& oneLog() noexcept;
-    std::ostream& operator()() const noexcept { return oneLog(); }
+    // holds coutMutex_() until the temporary dies, so `oneLog() << a << b` is one critical section
+    class Line
+    {
+    public:
+        Line() : lock_(coutMutex_()), os_(out_) {}  // lock_ is declared first, so out_ is read under the lock
+
+        template<class T>
+        Line& operator<<(T&& aVal) noexcept
+        {
+            try { *os_ << static_cast<T&&>(aVal); } catch (...) {}
+            return *this;
+        }
+        Line& operator<<(std::ostream& (*aManip)(std::ostream&)) noexcept  // endl/flush are templates
+        {
+            try { *os_ << aManip; } catch (...) {}
+            return *this;
+        }
+
+    private:
+        std::unique_lock<std::recursive_mutex> lock_;
+        std::ostream* os_;
+    };
+
+    static Line oneLog() noexcept;
+    Line operator()() const noexcept { return oneLog(); }
     static void trcPrintf(const char* fmt, ...) noexcept __attribute__((format(printf, 1, 2)));
 
     static void needLog() noexcept {}
@@ -61,13 +89,14 @@ public:
 
 #ifdef IN_ALL_UT
     // -------------------------------------------------------------------------------------------
-    // MT safe : no (since nLogLine_ is not atomic & no worth for ut only)
+    // MT safe : yes (coutMutex_())
     // mem safe: yes
 public:
     static void dropAllBuf_forUt() noexcept {}    // SmartLog dual; cout has no buf
     static void forceSaveAll_forUt() noexcept {}  // already on cout
 
     static void dumpAll_forUt() {  // for ut case clean at the end
+        std::lock_guard<std::recursive_mutex> guard(coutMutex_());
         nLogLine_ = 0;
         out_ = &std::cout;
         file_.close();
@@ -79,7 +108,7 @@ public:
 
 // ***********************************************************************************************
 // static than inline, avoid ut conflict when coexist both UniLog
-[[maybe_unused]] static std::ostream& oneLog() { return UniCoutLog::oneLog(); }
+[[maybe_unused]] static UniCoutLog::Line oneLog() { return UniCoutLog::oneLog(); }
 
 using UniLog = UniCoutLog;
 
@@ -100,4 +129,5 @@ using UniLog = UniCoutLog;
 // 2025-04-07  CSZ       3)tolerate exception
 // 2026-03-13  CSZ       4)log to file than cout
 // 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt stubs (SmartLog dual)
+// 2026-10-01  CSZ       5)MT safe UniCoutLog
 // ***********************************************************************************************

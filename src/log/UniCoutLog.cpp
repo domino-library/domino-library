@@ -14,18 +14,20 @@ using namespace std;
 namespace rlib
 {
 // ***********************************************************************************************
-ostream& UniCoutLog::oneLog() noexcept
+UniCoutLog::Line UniCoutLog::oneLog() noexcept
 {
+    Line line;  // locks coutMutex_() before reading out_; lock lives until the caller's << chain ends
     try {
-        ++nLogLine_;  // ut only; no impact product's MT safe & mem safe
-        *out_ << "c[" << mt_timestamp() << ' ' << ULN_DEFAULT << '/';
+        ++nLogLine_;  // ut only
+        line << "c[" << mt_timestamp() << ' ' << ULN_DEFAULT << '/';
     } catch(...) {}
-    return *out_;
+    return line;
 }
 
 // ***********************************************************************************************
 bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
 {
+    std::lock_guard<std::recursive_mutex> guard(coutMutex_());  // out_/file_ swap races with oneLog()
     try {
         if (aFileName.empty())
         {
@@ -62,9 +64,12 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
 }
 
 // ***********************************************************************************************
-// - TRC(): mt_formatTRC (shared) + fwrite (C stdio)
+// - TRC(): mt_formatTRC (thread_local) + fwrite
+// - MT safe : yes. C11 fwrite locks trcFp_. Does not take coutMutex_() (cout's lock);
+//   sharing that lock would put TRC back on the slow path.
 //   . fwrite to trcFp_ (FILE*): faster than ostream::write on 300K calls (507ms -> 260ms)
 //   . trcFp_ tracks out_ via setLogFileOK(): stdout when cout, fopen'd when file
+//   . setLogFileOK's fclose(old trcFp_) is not synchronized with an in-flight fwrite
 void UniCoutLog::trcPrintf(const char* fmt, ...) noexcept
 {
     va_list ap;
@@ -75,11 +80,11 @@ void UniCoutLog::trcPrintf(const char* fmt, ...) noexcept
 }
 
 // ***********************************************************************************************
-// - sync_with_stdio(false): decouple cout buffer from stdout (C FILE*) buffer
-//   . prerequisite for TRC fwrite coexisting with INF/WRN/ERR cout<<
-//   . without this: cout<<flush marks stdout line-buffered, TRC fwrite degrades 4x in suite
-//   . interleave safety: both paths output complete lines (\n-terminated),
-//     worst case = line-level reorder, never mid-line corruption;
+// - sync_with_stdio(false): cout and stdout use separate buffers.
+//   . TRC stays on fwrite. If cout is tied to stdout, a flush makes stdout line-buffered
+//     and TRC's fwrite slows about 4x. Untying them keeps that path fast.
+//   . The stdio lock is gone with it, so concurrent cout << can crash. oneLog()'s coutMutex_()
+//     covers a whole INF/WRN/ERR/HID line instead. TRC does not take coutMutex_().
 static const bool kSyncOff = (std::ios::sync_with_stdio(false), true);
 
 // ***********************************************************************************************

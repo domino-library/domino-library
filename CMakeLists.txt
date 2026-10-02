@@ -13,11 +13,11 @@ set(CMAKE_CXX_EXTENSIONS  OFF)
 # ------------------------------------------------------------------------------------------------
 # build mode: cmake -Dci=<mode> ..   (empty = fast UT, the local default)
 # - 1 knob replaces CMAKE_BUILD_TYPE: each mode bundles -O/-g, sanitizer/coverage and macros
-set(ci  ""  CACHE STRING  "UT build mode: <empty>=fast UT | cov | asan | tsan | release")
-set(_ci_allowed  ""  cov  asan  tsan  release)
+set(ci  ""  CACHE STRING  "UT build mode: <empty>=fast UT | smart | cov | asan | tsan | release")
+set(_ci_allowed  ""  smart  cov  asan  tsan  release)
 set_property(CACHE ci  PROPERTY STRINGS  ${_ci_allowed})
 if(NOT ci  IN_LIST  _ci_allowed)
-    message(FATAL_ERROR  "unknown ci='${ci}', expect one of: cov asan tsan release (or empty)")
+    message(FATAL_ERROR  "unknown ci='${ci}', expect one of: smart cov asan tsan release (or empty)")
 endif()
 if(CMAKE_BUILD_TYPE)
     message(FATAL_ERROR  "this project selects flags via -Dci=<mode>, not CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'")
@@ -33,21 +33,22 @@ if(ci  STREQUAL  "cov")
 
 elseif(ci  STREQUAL  "asan")
     message("!!! asan+lsan+ubsan for: use-after-free, double-free, out-of-bound, leak, undef behavior")
-    add_compile_definitions(_FORTIFY_SOURCE=2 IN_ALL_UT)  # buffer overflow checks
+    add_compile_definitions(SMART_LOG IN_ALL_UT)
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
-    add_compile_options(-O2)  # required for FORTIFY_SOURCE
+    add_compile_options(-O2)
     add_compile_options(-fsanitize=address,undefined)
+    add_compile_options(-fno-sanitize-recover=undefined)  # UBSan stops; ASan already does
 
     add_link_options(-fsanitize=address,undefined)
     add_link_options(-fstack-protector-strong)     # ensure stack protector runtime is linked
 
 elseif(ci  STREQUAL  "tsan")  # asan/lsan/msan cover by valgrind(memcheck)
     message("!!! SANITIZE for: thread")
-    add_compile_definitions(_FORTIFY_SOURCE=2 IN_ALL_UT)  # buffer overflow checks
+    add_compile_definitions(IN_ALL_UT)  # UniCoutLog; halt_on_error is in UtSoak.cpp
     add_compile_options(-g -fno-omit-frame-pointer)
     add_compile_options(-fstack-protector-strong)  # stack overflow protection
-    add_compile_options(-O2)  # required for FORTIFY_SOURCE
+    add_compile_options(-O2)
     add_compile_options(-fsanitize=thread)
 
     add_link_options(-fsanitize=thread)
@@ -70,9 +71,15 @@ elseif(ci  STREQUAL  "release")
     add_link_options(-Wl,--gc-sections)
 
 else()
-    message("!!! UT only - no cov, no SANITIZE check etc")
+    # "" = fast UT; "smart" = same plus SmartLog (build-smart)
     add_compile_options(-O1)  # fastest build+ut (1-cpp-change=5s, vs 45s of -g)
     add_compile_definitions(IN_SPECIAL_UT IN_ALL_UT)  # benchmark etc
+    if(ci STREQUAL "smart")
+        message("!!! fast UT + SmartLog")
+        add_compile_definitions(SMART_LOG)
+    else()
+        message("!!! UT only - no cov, no SANITIZE check etc")
+    endif()
 endif()
 
 #add_compile_options(-fno-exceptions)  # inc branch coverage
@@ -105,7 +112,7 @@ if(NOT ci STREQUAL "release")
         DEPENDS  ut_exe
     )
 
-    # make soak  (not CI; flags in soak.sh)
+    # make soak  (not CI; gtest flags in soak.sh)
     add_custom_target(soak
         COMMAND  bash ${CMAKE_SOURCE_DIR}/ut/soak.sh
         DEPENDS  ut_exe

@@ -5,11 +5,15 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 // ***********************************************************************************************
+#define WITH_HID_LOG 1  // this TU only: HID is off unless a build asks for debug clues
 #include "UniCoutLog.hpp"
 
 #include "StrCoutFSL.hpp"
 
+#include <atomic>
+#include <initializer_list>
 #include <sstream>
+#include <thread>
 
 #define UNI_LOG_TEST UniCoutLogTest
 #define UNI_LOG      UniCoutLog
@@ -190,6 +194,201 @@ TEST_F(UniCoutLogTest, soak_dual_stubs_noop)
 {
     UniCoutLog::dropAllBuf_forUt();   // SmartLog dual; cout has no buf
     UniCoutLog::forceSaveAll_forUt();
+}
+
+#define MT_SAFE
+// ***********************************************************************************************
+// swap cout under coutMutex_(): another thread may still be logging
+struct CoutCapture
+{
+    std::ostringstream buf;
+    std::streambuf* old;
+    CoutCapture()
+    {
+        std::lock_guard<std::recursive_mutex> guard(coutMutex_());
+        old = std::cout.rdbuf(buf.rdbuf());
+    }
+    ~CoutCapture()
+    {
+        std::lock_guard<std::recursive_mutex> guard(coutMutex_());
+        std::cout.rdbuf(old);
+    }
+};
+
+static bool endsWith(const std::string& aLine, const char* aMark)
+{
+    const auto n = std::char_traits<char>::length(aMark);
+    return aLine.size() >= n && aLine.compare(aLine.size() - n, n, aMark) == 0;
+}
+
+// a whole line starts with one prefix and ends with one mark.
+// catching "c[" only inside the line misses a full line inserted into another line's prefix.
+static void expectWholeLines(const std::string& aText, std::initializer_list<const char*> aMarks)
+{
+    std::istringstream in(aText);
+    std::string line;
+    while (std::getline(in, line))
+    {
+        const bool isInf = line.rfind("c[", 0) == 0;
+        const bool isHid = line.rfind("cout[", 0) == 0;
+        EXPECT_TRUE(isInf || isHid) << "REQ: line starts with a prefix, got: " << line;
+        EXPECT_EQ(line.find("c[", 1), std::string::npos) << "REQ: one prefix per line, got: " << line;
+        size_t nMark = 0;
+        for (auto m : aMarks)
+            nMark += endsWith(line, m);
+        EXPECT_EQ(nMark, 1u) << "REQ: line ends with one mark, got: " << line;
+    }
+}
+
+// - two threads INF and one thread HID, all on cout. sync_with_stdio(false) drops cout's own lock.
+TEST_F(UniCoutLogTest, infAndHid_threads_eachLineWhole)
+{
+    CoutCapture cap;
+    std::atomic<int> ready{0};
+    std::atomic<bool> go{false};
+    auto runInf = [&](const char* aMark)
+    {
+        ready.fetch_add(1);
+        while (!go.load()) {}
+        for (int i = 0; i < 200; ++i)
+            INF(aMark);
+    };
+    auto runHid = [&]
+    {
+        ready.fetch_add(1);
+        while (!go.load()) {}
+        for (int i = 0; i < 200; ++i)
+            HID("MARK-H");
+    };
+    std::thread a(runInf, "MARK-A");
+    std::thread b(runInf, "MARK-B");
+    std::thread h(runHid);
+    while (ready.load() < 3) {}
+    go.store(true);
+    a.join();
+    b.join();
+    h.join();
+    std::cout.flush();
+    const auto text = cap.buf.str();
+    EXPECT_NE(text.find("MARK-A"), std::string::npos) << "REQ: thread A wrote";
+    EXPECT_NE(text.find("MARK-B"), std::string::npos) << "REQ: thread B wrote";
+    EXPECT_NE(text.find("MARK-H"), std::string::npos) << "REQ: HID wrote";
+    expectWholeLines(text, {"MARK-A", "MARK-B", "MARK-H"});
+}
+
+// - SafePtr::operator-> calls HID, and that call can sit inside an INF argument
+TEST_F(UniCoutLogTest, hid_insideInfArgument_returns)
+{
+    CoutCapture cap;
+    bool ran = false;
+    auto hidThen = [&]()
+    {
+        HID("MARK-NEST");
+        ran = true;
+        return 1;
+    };
+    INF("n=" << hidThen());
+    std::cout.flush();
+    EXPECT_TRUE(ran) << "REQ: HID inside an INF argument returns";
+    EXPECT_NE(cap.buf.str().find("MARK-NEST"), std::string::npos) << "REQ: that HID was not compiled out";
+}
+
+// - one thread INF while another switches out_ between cout and a file
+TEST_F(UniCoutLogTest, setLogFileOK_whileInf_fileLinesWhole)
+{
+    const std::string fname = "ut_log_switch_race.log";
+    std::remove(fname.c_str());
+    std::atomic<int> ready{0};
+    std::atomic<bool> go{false};
+    std::atomic<bool> stop{false};
+    std::thread inf([&]
+    {
+        ready.fetch_add(1);
+        while (!go.load()) {}
+        while (!stop.load())
+            INF("MARK-F");
+    });
+    std::thread sw([&]
+    {
+        ready.fetch_add(1);
+        while (!go.load()) {}
+        for (int i = 0; i < 20; ++i)
+        {
+            EXPECT_TRUE(UniCoutLog::setLogFileOK(fname));
+            std::this_thread::yield();  // INF writes while out_ is the file
+            EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
+            std::this_thread::yield();
+        }
+        stop.store(true);
+    });
+    while (ready.load() < 2) {}
+    go.store(true);
+    inf.join();
+    sw.join();
+    EXPECT_TRUE(UniCoutLog::setLogFileOK("")) << "REQ: back to cout, file flushed";
+
+    std::ifstream fin(fname);
+    const std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("MARK-F"), std::string::npos) << "REQ: some INF landed in the file";
+    expectWholeLines(text, {"MARK-F"});
+    std::remove(fname.c_str());
+}
+
+// - TRC is fwrite to the log file, not cout, so a cout capture would miss it
+static void expectWholeTrcLines(const std::string& aText)
+{
+    std::istringstream in(aText);
+    std::string line;
+    int nLine = 0;
+    while (std::getline(in, line))
+    {
+        ++nLine;
+        EXPECT_TRUE(!line.empty() && line[0] >= '0' && line[0] <= '9')
+            << "REQ: TRC line starts with a timestamp, got: " << line;
+        const auto pos = line.rfind("MARK-T");
+        EXPECT_NE(pos, std::string::npos) << "REQ: TRC line has a mark, got: " << line;
+        if (pos == std::string::npos)
+            continue;
+        EXPECT_EQ(line.find("MARK-T"), pos) << "REQ: one TRC mark per line, got: " << line;
+        EXPECT_LT(pos + 6, line.size()) << "REQ: mark has a thread id, got: " << line;
+        for (size_t i = pos + 6; i < line.size(); ++i)
+            EXPECT_TRUE(line[i] >= '0' && line[i] <= '9') << "REQ: line ends at the mark, got: " << line;
+    }
+    EXPECT_GT(nLine, 0) << "REQ: TRC wrote to the file";
+}
+
+TEST_F(UniCoutLogTest, trc_threads_eachLineWhole)
+{
+    const std::string fname = "ut_trc_race.log";
+    std::remove(fname.c_str());
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(fname));
+
+    constexpr int nThread = 4;
+    std::atomic<int> ready{0};
+    std::atomic<bool> go{false};
+    std::thread th[nThread];
+    for (int t = 0; t < nThread; ++t)
+    {
+        th[t] = std::thread([&, t]
+        {
+            const auto mark = "MARK-T" + std::to_string(t);
+            ready.fetch_add(1);
+            while (!go.load()) {}
+            for (int i = 0; i < 50; ++i)
+                TRC("%s", mark.c_str());
+        });
+    }
+    while (ready.load() < nThread) {}
+    go.store(true);
+    for (auto& t : th)
+        t.join();
+    std::fflush(UniCoutLog::trcFp_);
+    EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
+
+    std::ifstream fin(fname);
+    const std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+    expectWholeTrcLines(text);
+    std::remove(fname.c_str());
 }
 
 }  // namespace rlib

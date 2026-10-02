@@ -9,6 +9,14 @@
 #include "UtInitObjAnywhere.hpp"
 #include "UtSoak.hpp"
 
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+#if defined(__SANITIZE_THREAD__) || __has_feature(thread_sanitizer)
+// default continues after a race; make run, soak.sh, and a replay all stop
+extern "C" const char* __tsan_default_options() { return "halt_on_error=1"; }
+#endif
+
 namespace rlib
 {
 struct SoakIterListener : testing::EmptyTestEventListener
