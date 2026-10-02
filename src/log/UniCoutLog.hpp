@@ -25,6 +25,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -92,8 +93,15 @@ public:
     // MT safe : yes (coutMutex_())
     // mem safe: yes
 public:
-    static void dropAllBuf_forUt() noexcept {}    // SmartLog dual; cout has no buf
-    static void forceSaveAll_forUt() noexcept {}  // already on cout
+    static void dropAllBuf_forUt() noexcept {}  // SmartLog dual; cout has no buf
+    // abort() keeps cout's C++ buf and, since glibc 2.27, the stdio FILE* buf
+    static void forceSaveAll_forUt() noexcept
+    {
+        std::lock_guard<std::recursive_mutex> guard(coutMutex_());  // workers may still be logging
+        out_->flush();
+        std::fflush(trcFp_);
+    }
+    static void rawDumpAll_forUt() noexcept {}  // cout's buf needs the lock; Die() must not take it
 
     static void dumpAll_forUt() {  // for ut case clean at the end
         std::lock_guard<std::recursive_mutex> guard(coutMutex_());
@@ -130,4 +138,5 @@ using UniLog = UniCoutLog;
 // 2026-03-13  CSZ       4)log to file than cout
 // 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt stubs (SmartLog dual)
 // 2026-10-01  CSZ       5)MT safe UniCoutLog
+// 2026-10-02  CSZ       - enhance log when soak failed
 // ***********************************************************************************************

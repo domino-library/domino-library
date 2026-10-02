@@ -77,6 +77,7 @@ public :
     void forceSave() noexcept;
     void dropBuf() noexcept { sbuf_.clear(); }  // discard text; keep the log object
     size_t size() const noexcept { return sbuf_.size(); }
+    const std::string& str() const noexcept { return sbuf_.str(); }  // raw dump; no copy
 };
 
 // ***********************************************************************************************
@@ -107,4 +108,5 @@ void StrCoutFSL::forceSave() noexcept
 // 2022-01-01  PJ & CSZ  - formal log & naming
 // 2026-03-05  CSZ       - replace stringstream with lightweight custom streambuf + std::string
 // 2026-09-20  CSZ       - dropBuf() for soak to discard success text
+// 2026-10-02  CSZ       - str() for sanitizer raw dump (no copy)
 // ***********************************************************************************************

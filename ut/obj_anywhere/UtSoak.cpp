@@ -25,6 +25,13 @@ namespace rlib
 {
 struct SoakIterListener : testing::EmptyTestEventListener
 {
+    void OnTestProgramEnd(const testing::UnitTest&) override
+    {
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) \
+    || __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
+        __sanitizer_set_death_callback(nullptr);  // LSan Die() is at exit, after statics may be gone
+#endif
+    }
     void OnTestIterationStart(const testing::UnitTest& ut, int it) override
     {
         soakIter_ = it;
@@ -48,9 +55,14 @@ struct SoakIterListener : testing::EmptyTestEventListener
 
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) \
     || __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
-// Die() skips gtest. line only: flush can fault (asan) or deadlock (tsan)
+// Die() skips gtest and may still hold TSan's lock. no cout, no mutex, no malloc.
+// UniCoutLog's rawDump is empty: cout's buf needs the lock, so an INF tail can be lost.
+// WRN/ERR already flushed. OnTestProgramEnd clears this; LSan Die() is at exit.
 [[maybe_unused]] static const bool s_sanDieReg =
-    isSoak() && (__sanitizer_set_death_callback([] { soakReplayLine(); }), true);
+    isSoak() && (__sanitizer_set_death_callback([] {
+        soakReplayLine();
+        UniLog::rawDumpAll_forUt();
+    }), true);
 #endif
 
 }  // namespace

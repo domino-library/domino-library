@@ -24,6 +24,9 @@
 
 #include <memory>
 #include <unordered_map>
+#ifdef IN_ALL_UT
+#include <unistd.h>
+#endif
 
 #include "StrCoutFSL.hpp"
 #include "UniBaseLog.hpp"
@@ -72,10 +75,23 @@ public:
         for (auto&& name_log : name_log_S_)
             name_log.second->dropBuf();
     }
+    // abort() flushes neither cout's C++ buf nor stdio
     static void forceSaveAll_forUt() noexcept
     {
         for (auto&& name_log : name_log_S_)
             name_log.second->forceSave();
+        std::cout.flush();
+    }
+
+    // sanitizer Die(): no lock, no malloc, no streambuf. a torn string may still fault
+    static void rawDumpAll_forUt() noexcept
+    {
+        for (auto&& name_log : name_log_S_)
+        {
+            const auto& s = name_log.second->str();
+            if (s.empty()) continue;  // write(size 0) is unspecified on a pipe
+            if (::write(STDOUT_FILENO, s.data(), s.size()) < 0) return;
+        }
     }
 
     static void dumpAll_forUt()  // for ut case clean at the end; mem-risk=use-after-free, so ut ONLY
@@ -117,4 +133,5 @@ using UniLog = UniSmartLog;
 // 2024-02-21  CSZ       2)mem-safe
 // 2025-04-07  CSZ       3)tolerate exception
 // 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt for soak test
+// 2026-10-02  CSZ       - enhance log when soak failed
 // ***********************************************************************************************

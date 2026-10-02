@@ -190,10 +190,11 @@ TEST(StrCoutFSLTest, forceSave_thenMoreWrites_outputAll)
     EXPECT_EQ("Part1\nPart2\n", captured.str()) << "REQ: forceSave() then more writes should output all";
 }
 
-TEST_F(UniCoutLogTest, soak_dual_stubs_noop)
+TEST_F(UniCoutLogTest, soak_dual_forceSave_flushes)
 {
-    UniCoutLog::dropAllBuf_forUt();   // SmartLog dual; cout has no buf
-    UniCoutLog::forceSaveAll_forUt();
+    UniCoutLog::dropAllBuf_forUt();    // SmartLog dual; cout has no buf
+    UniCoutLog::forceSaveAll_forUt();  // flush cout + trc FILE*; abort() keeps neither
+    UniCoutLog::rawDumpAll_forUt();    // Die() must not touch cout's buf
 }
 
 #define MT_SAFE
