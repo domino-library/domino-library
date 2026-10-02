@@ -41,8 +41,9 @@ jobs:
     - name: make ut
       run: cmake -Dci=cov -DCMAKE_CXX_COMPILER="g++" -S . -B build-cov && cmake --build build-cov -j
 
+    # fair-sched: default lets the thread that just ran keep the CPU, so a logger can starve its peer
     - name: ut
-      run: SLICE=always-malloc G_DEBUG=gc-friendly valgrind -v --tool=memcheck --leak-check=full --num-callers=40 --log-file=build-cov/cov.valgrind.log --error-exitcode=6 ./build-cov/ut_exe --gtest_brief=1
+      run: SLICE=always-malloc G_DEBUG=gc-friendly valgrind -v --tool=memcheck --fair-sched=yes --leak-check=full --num-callers=40 --log-file=build-cov/cov.valgrind.log --error-exitcode=6 ./build-cov/ut_exe --gtest_brief=1
 
     - name: install gcovr
       run: pip install gcovr

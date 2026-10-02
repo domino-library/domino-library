@@ -250,21 +250,21 @@ TEST_F(UniCoutLogTest, infAndHid_threads_eachLineWhole)
     auto runInf = [&](const char* aMark)
     {
         ready.fetch_add(1);
-        while (!go.load()) {}
+        while (!go.load()) std::this_thread::yield();  // bare spin starves the peer under valgrind
         for (int i = 0; i < 200; ++i)
             INF(aMark);
     };
     auto runHid = [&]
     {
         ready.fetch_add(1);
-        while (!go.load()) {}
+        while (!go.load()) std::this_thread::yield();
         for (int i = 0; i < 200; ++i)
             HID("MARK-H");
     };
     std::thread a(runInf, "MARK-A");
     std::thread b(runInf, "MARK-B");
     std::thread h(runHid);
-    while (ready.load() < 3) {}
+    while (ready.load() < 3) std::this_thread::yield();
     go.store(true);
     a.join();
     b.join();
@@ -295,6 +295,7 @@ TEST_F(UniCoutLogTest, hid_insideInfArgument_returns)
 }
 
 // - one thread INF while another switches out_ between cout and a file
+// - yield is outside coutMutex_(), so sw can take the lock under valgrind
 TEST_F(UniCoutLogTest, setLogFileOK_whileInf_fileLinesWhole)
 {
     const std::string fname = "ut_log_switch_race.log";
@@ -305,14 +306,17 @@ TEST_F(UniCoutLogTest, setLogFileOK_whileInf_fileLinesWhole)
     std::thread inf([&]
     {
         ready.fetch_add(1);
-        while (!go.load()) {}
+        while (!go.load()) std::this_thread::yield();
         while (!stop.load())
+        {
             INF("MARK-F");
+            std::this_thread::yield();
+        }
     });
     std::thread sw([&]
     {
         ready.fetch_add(1);
-        while (!go.load()) {}
+        while (!go.load()) std::this_thread::yield();
         for (int i = 0; i < 20; ++i)
         {
             EXPECT_TRUE(UniCoutLog::setLogFileOK(fname));
@@ -322,7 +326,7 @@ TEST_F(UniCoutLogTest, setLogFileOK_whileInf_fileLinesWhole)
         }
         stop.store(true);
     });
-    while (ready.load() < 2) {}
+    while (ready.load() < 2) std::this_thread::yield();
     go.store(true);
     inf.join();
     sw.join();
@@ -374,12 +378,12 @@ TEST_F(UniCoutLogTest, trc_threads_eachLineWhole)
         {
             const auto mark = "MARK-T" + std::to_string(t);
             ready.fetch_add(1);
-            while (!go.load()) {}
+            while (!go.load()) std::this_thread::yield();
             for (int i = 0; i < 50; ++i)
                 TRC("%s", mark.c_str());
         });
     }
-    while (ready.load() < nThread) {}
+    while (ready.load() < nThread) std::this_thread::yield();
     go.store(true);
     for (auto& t : th)
         t.join();
