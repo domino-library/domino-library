@@ -104,6 +104,31 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
 }
 
 // ***********************************************************************************************
+// task1 returns only after stop, so the worker exits without taking the queued task2
+TEST_F(ThPoolBackTest, dtor_discards_task_still_queued)
+{
+    std::atomic<bool> inTask{false};
+    std::atomic<int> nBack{0};
+    {
+        ThPoolBack pool(1, 2);
+        EXPECT_TRUE(pool.newTaskOK(
+            [&] {
+                inTask = true;
+                while (!pool.mt_stopping_forUt()) std::this_thread::yield();
+                return make_safe<bool>(true);
+            },
+            [&](SafePtr<void>) { nBack += 1; }
+        ));
+        while (!inTask) std::this_thread::yield();  // else stop may come before task1 starts
+        EXPECT_TRUE(pool.newTaskOK(
+            [] { return make_safe<bool>(true); },
+            [&](SafePtr<void>) { nBack += 10; }
+        ));
+    }
+    EXPECT_EQ(1, nBack.load()) << "REQ: dtor runs the finished backFN and drops the queued one";
+}
+
+// ***********************************************************************************************
 TEST_F(ThPoolBackTest, maxTaskQ_0_forced_to_default)
 {
     ThPoolBack myPool(2, 0);  // 0 forced to MAX_TASKQ=10000

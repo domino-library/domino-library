@@ -48,8 +48,7 @@ protected:
 
     std::streamsize xsputn(const char* s, std::streamsize n) override
     {
-        if (!s || n <= 0) return 0;
-        buf_.append(s, static_cast<size_t>(n));
+        buf_.append(s, static_cast<size_t>(n));  // ostream never passes null or n<=0
         return n;
     }
 

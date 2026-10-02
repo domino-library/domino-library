@@ -61,19 +61,15 @@ void ThPoolBack::mt_threadMain_() noexcept
             mt_taskQ_.pop_front();
         }
 
-        // - thread can continue when entry() throws
-        // - other excepts (eg bad_alloc) are rare & hard-recover
+        // exception stays on this thread. set_exception let ~promise free it
+        // after main's catch read e.what(); libsupc++'s refcount is invisible to tsan
         SafePtr<void> ret;
-        std::exception_ptr eptr;
         try { ret = job.entry(); }
-        catch (...) { eptr = std::current_exception(); }
+        catch (...) { HID("(ThPoolBack) entryFN() except=" << mt_exceptInfo()); }  // same as AsyncBack
         job.entry = nullptr;  // drop captures before main runs backFN
 
         mt_nDoneFut_.fetch_add(1, std::memory_order_release);  // before ready: hdlDoneFut may take it on an older count
-        if (eptr)
-            job.prom.set_exception(move(eptr));
-        else
-            job.prom.set_value(move(ret));
+        job.prom.set_value(move(ret));
         mt_pingMainTH();  // always ping, or may wait long under low load
     }
 }

@@ -67,6 +67,11 @@ private:
     // -------------------------------------------------------------------------------------------
     static constexpr size_t  MAX_THREAD = 100;      // rational default; stack costs 100*8M=800M
     static constexpr size_t  MAX_TASKQ  = 10'000;   // rational default for limitNewTaskOK
+
+#ifdef IN_ALL_UT
+public:
+    bool mt_stopping_forUt() const noexcept { return mt_stopAllTH_.load(); }
+#endif
 };
 
 }  // namespace
@@ -77,4 +82,5 @@ private:
 // 2025-03-21  CSZ       2)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-04-09  CSZ       - can limit max tasks
 // 2026-10-02  CSZ       - count +1 before the future is ready
+//                       - entryFN except stays on the worker (tsan)
 // ***********************************************************************************************
