@@ -37,6 +37,7 @@
 //     . SafePtr is just to test SafeWeak in real world
 //   . not support callback after ~MsgSelf() since all msg discarded when ~MsgSelf()
 //     . UtInitObjAnywhere gives example how to provide a common callback for main()
+//   . handleAllMsg() refuses reenter
 //   . not limit queue size as std lib, usr responds for safety
 // ***********************************************************************************************
 #pragma once
@@ -98,6 +99,7 @@ private:
     // -------------------------------------------------------------------------------------------
     std::array<std::deque<MsgCB>, EMsgPri_MAX> msgQueues_;
     size_t nMsg_ = 0;
+    bool inHandle_ = false;  // handleAllMsg() in progress; refuse reenter
 };
 }  // namespace
 // ***********************************************************************************************
@@ -122,4 +124,5 @@ private:
 // 2023-10-27  CSZ       - replace pingMainFN_() by mt_pingMainTH()
 // 2025-02-13  CSZ       - support both SafePtr & shared_ptr
 // 2025-03-25  CSZ       5)enable exception: tolerate is safer; can't recover except->terminate
+// 2026-10-02  CSZ       - handleAllMsg() refuses reenter
 // ***********************************************************************************************

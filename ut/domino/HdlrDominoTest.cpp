@@ -7,6 +7,8 @@
 // ***********************************************************************************************
 #include <gmock/gmock.h>
 #include <set>
+#include <stdexcept>
+#include <type_traits>
 
 #include "UtInitObjAnywhere.hpp"
 
@@ -462,6 +464,55 @@ TYPED_TEST_P(HdlrDominoTest, bugFix_invalidMsgSelf)  // checked by CI valgrind
     EXPECT_FALSE(PARA_DOM->setMsgSelfOK(nullptr)) << "REQ: msgSelf=null is not allowed";
 }
 
+template<class aT, class = void>
+struct HasRepeatedHdlr : std::false_type {};
+template<class aT>
+struct HasRepeatedHdlr<aT, std::void_t<decltype(std::declval<aT&>().repeatedHdlr(Domino::EvName{}))>>
+    : std::true_type {};
+
+// local DOM: the process-lifetime PARA DOM must not be destroyed
+TYPED_TEST_P(HdlrDominoTest, queuedHdlr_thenRmDom_noCallback)
+{
+    auto dom = MAKE_PTR<TypeParam>(this->uniLogName());
+    int ran = 0;
+    dom->setHdlr("e", [&ran]{ ++ran; });
+    dom->setState({{"e", true}});
+    ASSERT_EQ(1u, MSG_SELF->nMsg());
+
+    dom = nullptr;
+    while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();
+    EXPECT_EQ(0, ran);
+    EXPECT_EQ(0u, MSG_SELF->nMsg());
+}
+TYPED_TEST_P(HdlrDominoTest, hdlr_destroysDom_returnAndThrow)
+{
+    auto run = [this](bool doThrow, bool repeated) {
+        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());
+        int ran = 0;
+        if constexpr (HasRepeatedHdlr<TypeParam>::value) {
+            if (repeated) dom->repeatedHdlr("e");  // base cb_hdlr_; else FreeHdlrDomino::cb_hdlr_
+        } else {
+            (void)repeated;
+        }
+        dom->setHdlr("e", [&]{
+            ++ran;
+            dom = nullptr;
+            if (doThrow) throw std::runtime_error("die");
+        });
+        dom->setState({{"e", true}});
+        EXPECT_EQ(1u, MSG_SELF->nMsg());
+        while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();
+        EXPECT_EQ(1, ran);
+        EXPECT_FALSE(dom);
+    };
+    run(false, false);
+    run(true, false);
+    if constexpr (HasRepeatedHdlr<TypeParam>::value) {
+        run(false, true);
+        run(true, true);
+    }
+}
+
 // ***********************************************************************************************
 REGISTER_TYPED_TEST_SUITE_P(HdlrDominoTest
     , GOLD_add_and_call
@@ -491,6 +542,9 @@ REGISTER_TYPED_TEST_SUITE_P(HdlrDominoTest
 
     , replace_msgSelf
     , bugFix_invalidMsgSelf
+
+    , queuedHdlr_thenRmDom_noCallback
+    , hdlr_destroysDom_returnAndThrow
 );
 using AnyHdlrDom = Types<MinHdlrDom, MinMhdlrDom, MinFreeDom, MinPriDom, MaxNofreeDom, MaxDom>;
 INSTANTIATE_TYPED_TEST_SUITE_P(PARA, HdlrDominoTest, AnyHdlrDom);

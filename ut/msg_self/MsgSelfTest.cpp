@@ -213,4 +213,25 @@ TEST_F(MsgSelfTest, invalid_nMsg)
     EXPECT_EQ(0, msgSelf_->nMsg(EMsgPriority(-1))) << "REQ: not accept out bound priority";
 }
 
+#define REENTER
+// ***********************************************************************************************
+TEST_F(MsgSelfTest, reenter_handleAllMsg_refused_thenNextRoundOk)
+{
+    EXPECT_TRUE(msgSelf_->newMsgOK([&]{
+        hdlrIDs_.push(1);
+        msgSelf_->handleAllMsg();  // inHandle_ already true
+        EXPECT_EQ(queue<int>({1}), hdlrIDs_) << "REQ: reenter does not run the next msg";
+        hdlrIDs_.push(2);
+    })) << "REQ: new msg OK";
+    EXPECT_TRUE(msgSelf_->newMsgOK([&]{ hdlrIDs_.push(3); })) << "REQ: new msg OK";
+
+    msgSelf_->handleAllMsg();
+    EXPECT_EQ(queue<int>({1, 2, 3}), hdlrIDs_) << "REQ: outer loop still runs the next msg";
+    EXPECT_EQ(0u, msgSelf_->nMsg());
+
+    EXPECT_TRUE(msgSelf_->newMsgOK([&]{ hdlrIDs_.push(4); })) << "REQ: new msg OK";
+    msgSelf_->handleAllMsg();  // inHandle_ was cleared
+    EXPECT_EQ(queue<int>({1, 2, 3, 4}), hdlrIDs_) << "REQ: next handleAllMsg still runs";
+}
+
 }  // namespace

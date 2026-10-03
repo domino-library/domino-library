@@ -25,6 +25,7 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <cstdio>
 #include <functional>
 #include <stdexcept>
 #include <vector>
@@ -68,7 +69,7 @@ protected:
     size_t nHdlr_(Domino::Event aEv) const noexcept { return (aEv < ev_hdlr_S_.size() && ev_hdlr_S_[aEv]) ? 1 : 0; }
     bool rmOneHdlrOK_(Domino::Event aEv) noexcept;
 
-    static void cb_hdlr_(HdlrDomino*, Domino::Event, const WeakMsgCB&) noexcept;
+    static void cb_hdlr_(Domino::Event, const WeakMsgCB&) noexcept;
 
     // -------------------------------------------------------------------------------------------
 private:
@@ -91,16 +92,14 @@ HdlrDomino<aDominoType>::HdlrDomino(const LogName& aUniLogName) : aDominoType(aU
 }
 
 // ***********************************************************************************************
-// - static fn
-// - member fn: for catch(...) to ERR()
+// - static fn than member: safer (not rely on anyone)
 template<class aDominoType>
-void HdlrDomino<aDominoType>::cb_hdlr_(HdlrDomino* aSelfDom, Domino::Event aValidEv, const WeakMsgCB& aWeakCB) noexcept
+void HdlrDomino<aDominoType>::cb_hdlr_(Domino::Event aValidEv, const WeakMsgCB& aWeakCB) noexcept
 {
-    if (auto cb = aWeakCB.lock()) {  // hdlr ok -> Dom.map ok -> Dom ok
+    if (auto cb = aWeakCB.lock()) {  // cb avilable
         try { (*(cb.get()))(); }  // setHdlr() forbid cb==null
-        catch(...) {
-            auto& oneLog = *aSelfDom;
-            ERR("(HdlrDom) hdlr() except=" << mt_exceptInfo() << ", en=" << aSelfDom->evName_(aValidEv));
+        catch(...) {  // fprintf: no throw (safe), min print (helpful) w/o extra obj/action/etc (safe)
+            std::fprintf(stderr, "ERR(HdlrDom) hdlr() except=%s, ev=%zu\n", mt_exceptInfo(), aValidEv);
         }
     }
 }
@@ -257,8 +256,8 @@ void HdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Domino
 {
     HID("(HdlrDom) trigger a new msg.");
     if (!msgSelf_->newMsgOK(
-        [aSelfDom = this, aValidEv, weakMsgCB = WeakMsgCB(aValidHdlr)]() noexcept {
-            cb_hdlr_(aSelfDom, aValidEv, weakMsgCB);  // not exe here
+        [aValidEv, weakMsgCB = WeakMsgCB(aValidHdlr)]() noexcept {
+            cb_hdlr_(aValidEv, weakMsgCB);  // not exe here
         },
         getPriority(aValidEv)
     ))
@@ -283,4 +282,5 @@ void HdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Domino
 // 2024-03-10  CSZ       - enhance safe eg setMsgSelf()
 // 2025-02-13  CSZ       - support both SafePtr & shared_ptr
 // 2025-04-05  CSZ       3)tolerate exception
+// 2026-10-02  CSZ       - cb_hdlr_: enhance safety
 // ***********************************************************************************************

@@ -21,6 +21,7 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <cstdio>
 #include <vector>
 
 namespace rlib
@@ -58,12 +59,11 @@ void FreeHdlrDomino<aDominoType>::cb_hdlr_(FreeHdlrDomino* aSelfDom, Domino::Eve
     auto hdlr = aWeakHdlr.lock();
     if (! hdlr)
         return;
-    // hdlr ok -> aFreeDom.map ok -> aFreeDom ok
+    // hdlr alive => Dom alive here. MsgSelf refuses handleAllMsg() reenter, so a later msg cannot see a dead Dom
     aSelfDom->rmOneHdlrOK_(aValidEv, hdlr);
-    try { (*(hdlr.get()))(); }
-    catch(...) {
-        auto& oneLog = *aSelfDom;
-        ERR("(FreeHdlrDom) hdlr() except=" << mt_exceptInfo() << ", en=" << aSelfDom->evName_(aValidEv));
+    try { (*(hdlr.get()))(); }  // setHdlr() forbid cb==null
+    catch(...) {  // fprintf: no throw (safe), min print (helpful) w/o extra obj/action/etc (safe)
+        std::fprintf(stderr, "ERR(FreeHdlrDom) hdlr() except=%s, ev=%zu\n", mt_exceptInfo(), aValidEv);
     }
 }
 
@@ -142,4 +142,5 @@ void FreeHdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Do
 // 2022-12-04  CSZ       - simple & natural
 // 2025-02-13  CSZ       - support both SafePtr & shared_ptr
 // 2025-04-05  CSZ       3)tolerate exception
+// 2026-10-02  CSZ       - cb_hdlr_: enhance safety
 // ***********************************************************************************************

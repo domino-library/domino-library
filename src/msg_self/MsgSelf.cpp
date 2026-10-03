@@ -12,7 +12,14 @@ namespace rlib
 // ***********************************************************************************************
 void MsgSelf::handleAllMsg() noexcept
 {
+    if (inHandle_)  // callback must not reenter; outer loop continues after it returns
+    {
+        ERR("(MsgSelf) refuse reenter handleAllMsg()");
+        return;
+    }
+    inHandle_ = true;
     while (handleOneMsg_());  // handleOneMsg_() may create new high priority msg(s)
+    inHandle_ = false;
 }
 
 // ***********************************************************************************************
