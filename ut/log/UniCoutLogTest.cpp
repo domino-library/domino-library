@@ -320,7 +320,8 @@ TEST_F(UniCoutLogTest, setLogFileOK_whileInf_fileLinesWhole)
         for (int i = 0; i < 20; ++i)
         {
             EXPECT_TRUE(UniCoutLog::setLogFileOK(fname));
-            std::this_thread::yield();  // INF writes while out_ is the file
+            const auto n = UniCoutLog::logLen();
+            while (UniCoutLog::logLen() == n) std::this_thread::yield();  // one INF while out_ is the file
             EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
             std::this_thread::yield();
         }

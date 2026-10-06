@@ -47,5 +47,5 @@ echo "initial_seed=${SEED}"
 SOAK=1 TRACE_OFF=1 MALLOC_ARENA_MAX=1 nice -n 19 ./ut_exe \
     --gtest_color=yes --gtest_shuffle --gtest_repeat=-1 --gtest_brief=1 \
     --gtest_random_seed="${SEED}" \
-    --gtest_filter='PARA/*:MtInQueue*:ThPoolBackTest.*:AsyncBackTest.*:-ThPoolBackTest.performance' \
+    --gtest_filter='PARA/*:LoadTest*:MtInQueue*:ThPoolBackTest.*:AsyncBackTest.*:-ThPoolBackTest.performance' \
     "$@"
