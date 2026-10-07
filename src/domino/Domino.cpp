@@ -17,11 +17,22 @@ namespace rlib
 static const Domino::EVs defaultEvPeers;  // internal use only
 
 // ***********************************************************************************************
+void Domino::clearNextable_() noexcept
+{
+    for (auto ev : nextableSet_)
+        nextable_[ev] = false;
+    nextableSet_.clear();
+}
+
+// ***********************************************************************************************
 void Domino::deduceStateFrom_(Event aValidEv) noexcept
 {
-    stack<Event> evStack;
-    for (auto curEV = aValidEv; ; curEV = evStack.top(), evStack.pop())
+    // vector, not std::stack/deque: an empty deque still allocates (libstdc++)
+    deduceStack_.push_back(aValidEv);
+    while (!deduceStack_.empty())
     {
+        const auto curEV = deduceStack_.back();
+        deduceStack_.pop_back();
         HID("(Domino) en=" << evName_(curEV));
 
         // recalc state from predecessors
@@ -31,13 +42,10 @@ void Domino::deduceStateFrom_(Event aValidEv) noexcept
             // propagate to successors
             for (bool branch : {true, false}) {  // search next_[true] & next_[false]
                 for (auto&& nextEV : findPeerEVs(curEV, next_[branch])) {
-                    evStack.push(nextEV);  // dup-deduce is safer (like real domino)
+                    deduceStack_.push_back(nextEV);  // dup-deduce is safer (like real domino)
                 }
             }
         }
-
-        if (evStack.empty())
-            return;
     }
 }
 
@@ -56,7 +64,7 @@ void Domino::effect_() noexcept
     for (auto&& ev : effectEVs_)
         if (states_[ev] == true)  // avoid multi-change; skip bounds check since effectEVs_ are validated
             effect_(ev);
-    decltype(effectEVs_)().swap(effectEVs_);  // may safer & faster than clear()
+    effectEVs_.clear();  // perf: keep capacity for the next wave (avoid de&re-alloc)
 }
 
 // ***********************************************************************************************
@@ -87,10 +95,6 @@ Domino::Event Domino::getEventBy(const EvName& aEvName) const noexcept
 // ***********************************************************************************************
 Domino::Event Domino::newEvent(const EvName& aEvName) noexcept
 {
-#ifdef IN_ALL_UT
-    if (newEvHook_forUt)
-        newEvHook_forUt(*this, aEvName);
-#endif
     if (!aEvName.empty() &&  // otherwise isspace() may UB
         (isspace(static_cast<unsigned char>(aEvName.front())) || isspace(static_cast<unsigned char>(aEvName.back())))
     )
@@ -115,15 +119,18 @@ Domino::Event Domino::newEvent(const EvName& aEvName) noexcept
         for (auto& link : next_) link.emplace_back();
     }
     ev_en_[newEv] = aEvName;
+#ifdef IN_ALL_UT
+    if (newEvHook_forUt)
+        newEvHook_forUt(*this, aEvName);
+#endif
 
     return newEv;
 }
 
 // ***********************************************************************************************
-void Domino::pureRmLink_(Event aValidEv, EvLinks& aMyLinks, EvLinks& aNeighborLinks) noexcept
+void Domino::pureRmPeers_(Event aValidEv, const EVs& aPeers, EvLinks& aNeighborLinks) noexcept
 {
-    // rm neighbor's link
-    for (auto&& peerEv : findPeerEVs(aValidEv, aMyLinks))
+    for (auto&& peerEv : aPeers)
     {
         if (peerEv >= aNeighborLinks.size())  // not found
             continue;
@@ -138,8 +145,12 @@ void Domino::pureRmLink_(Event aValidEv, EvLinks& aMyLinks, EvLinks& aNeighborLi
             }
         }
     }
+}
 
-    // rm my link
+// ***********************************************************************************************
+void Domino::pureRmLink_(Event aValidEv, EvLinks& aMyLinks, EvLinks& aNeighborLinks) noexcept
+{
+    pureRmPeers_(aValidEv, findPeerEVs(aValidEv, aMyLinks), aNeighborLinks);
     if (aValidEv < aMyLinks.size())
         aMyLinks[aValidEv].clear();
 }
@@ -183,16 +194,20 @@ bool Domino::pureSetStateOK_(Event aValidEv, const bool aNewState) noexcept
 // ***********************************************************************************************
 void Domino::rmEv_(Event aValidEv) noexcept
 {
-    // cp for later deduceStateFrom_(next)
-    auto trueNextEVs  = findPeerEVs(aValidEv, next_[true]);
-    auto falseNextEVs = findPeerEVs(aValidEv, next_[false]);
+    // take next lists (no copy); successors are deduced after links are gone
+    EVs trueNextEVs;
+    EVs falseNextEVs;
+    if (aValidEv < next_[true].size())
+        trueNextEVs.swap(next_[true][aValidEv]);
+    if (aValidEv < next_[false].size())
+        falseNextEVs.swap(next_[false][aValidEv]);
     HID("(Domino) en=" << evName_(aValidEv) << ", nNextT=" << trueNextEVs.size() << ", nNextF=" << falseNextEVs.size());
 
     // rm link
     pureRmLink_(aValidEv, prev_[true],  next_[true]);
     pureRmLink_(aValidEv, prev_[false], next_[false]);
-    pureRmLink_(aValidEv, next_[true],  prev_[true]);
-    pureRmLink_(aValidEv, next_[false], prev_[false]);
+    pureRmPeers_(aValidEv, trueNextEVs,  prev_[true]);
+    pureRmPeers_(aValidEv, falseNextEVs, prev_[false]);
 
     // rm self resrc
     pureSetStateOK_(aValidEv, false);  // must before clean ev_en_
@@ -214,42 +229,48 @@ void Domino::rmEv_(Event aValidEv) noexcept
 Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrevEvents) noexcept
 {
     const auto fromEv = newEvent(aEvName);  // complex by getEventBy(), not worth
-    // - compute all nextable events from fromEv once for all aSimuPrevEvents
-    // - vector<bool>/bit is safer than unordered_set when huge nexts
-    vector<bool> nextable(states_.size() + aSimuPrevEvents.size(), false);  // reserve & init; tmp container
+    // - reachability bitmap is reused; only the bits this call sets are cleared
+    // - sized once per growth: states_ plus every new prev this call may create
+    nextable_.resize(states_.size() + aSimuPrevEvents.size());
+    auto mark = [this](Event ev) {
+        nextable_[ev] = true;
+        nextableSet_.push_back(ev);
+    };
+    // deduceStack_ is idle here; reuse it instead of allocating a search stack
+    mark(fromEv);
+    deduceStack_.push_back(fromEv);
+    while (!deduceStack_.empty())
     {
-        stack<Event> evStack;
-        nextable[fromEv] = true;
-        for (auto curEv = fromEv; ; curEv = evStack.top(), evStack.pop())
-        {
-            for (bool branch : {true, false}) {
-                for (auto&& nextEV : findPeerEVs(curEv, next_[branch])) {
-                    if (!nextable[nextEV]) {
-                        nextable[nextEV] = true;  // mark-on-push(than mark-on-pop), avoid dup push & infinite loop
-                        evStack.push(nextEV);
-                    }
+        const auto curEv = deduceStack_.back();
+        deduceStack_.pop_back();
+        for (bool branch : {true, false}) {
+            for (auto&& nextEV : findPeerEVs(curEv, next_[branch])) {
+                if (!nextable_[nextEV]) {
+                    mark(nextEV);  // mark-on-push(than mark-on-pop), avoid dup push & infinite loop
+                    deduceStack_.push_back(nextEV);
                 }
             }
-            if (evStack.empty())
-                break;
         }
     }
     // validate loop & conflict
     for (auto&& [prevEn, state] : aSimuPrevEvents)
     {
         auto&& prevEv = newEvent(prevEn);
-        if (nextable[prevEv])  // + aSimuPrevEvents.size() so impossible out-bounds
+        if (nextable_[prevEv])  // + aSimuPrevEvents.size() so impossible out-bounds
         {
             ERR("(Domino) !!!Failed since invalid EN=" << aEvName << ", or loop to=" << prevEn);
+            clearNextable_();
             return D_EVENT_FAILED_RET;
         }
         auto&& conflictPeers = findPeerEVs(fromEv, prev_[!state]);
         if (find(conflictPeers.begin(), conflictPeers.end(), prevEv) != conflictPeers.end())
         {
             ERR("(Domino) !!!Failed since T/F conflict on prev=" << prevEn << " for " << aEvName);
+            clearNextable_();
             return D_EVENT_FAILED_RET;
         }
     }
+    clearNextable_();
 
     // set prev
     pureSetPrev_(fromEv, aSimuPrevEvents);

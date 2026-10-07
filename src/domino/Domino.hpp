@@ -47,7 +47,6 @@
 #pragma once
 
 #include <map>
-#include <stack>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -118,6 +117,8 @@ private:
     bool pureSetStateOK_(Event aValidEv, const bool aNewState) noexcept;
     void pureSetPrev_(Event aValidEv, const SimuEvents&) noexcept;
     void pureRmLink_(Event aValidEv, EvLinks& aMyLinks, EvLinks& aNeighborLinks) noexcept;
+    void pureRmPeers_(Event aValidEv, const EVs& aPeers, EvLinks& aNeighborLinks) noexcept;
+    void clearNextable_() noexcept;  // perf
 
     struct WhyStep{ Event curEV_; bool whyFlag_; EvName resultEN_; };
     void whyTrue_ (WhyStep&) const noexcept;
@@ -134,6 +135,9 @@ private:
     std::unordered_map<EvName, Event> en_ev_;  // [evName]=event; event# may huge
     EvNames                           ev_en_;  // [event]=evName
     EVs                               effectEVs_;
+    EVs                               deduceStack_;  // perf: reused across deduce; avoids a deque alloc per call
+    std::vector<bool>                 nextable_;     // perf: setPrev reachability; false between calls
+    EVs                               nextableSet_;  // perf: bits set this call; only these are cleared
 
 #ifdef IN_ALL_UT  // for soak test only
 public:

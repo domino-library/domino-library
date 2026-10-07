@@ -447,6 +447,14 @@ TYPED_TEST_P(DominoTest, getEventBy_existing_event)
     auto ev = PARA_DOM->newEvent("e1");
     EXPECT_EQ(ev, PARA_DOM->getEventBy("e1")) << "REQ: get existing event";
 }
+TYPED_TEST_P(DominoTest, evName_untrimmed)
+{
+    const auto lead = PARA_DOM->newEvent(" e");   // leading space
+    const auto trail = PARA_DOM->newEvent("e ");  // trailing space
+    EXPECT_EQ(lead, PARA_DOM->getEventBy(" e"));
+    EXPECT_EQ(trail, PARA_DOM->getEventBy("e "));
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("e")) << "REQ: warn only, never trim";
+}
 TYPED_TEST_P(DominoTest, nonConstInterface_shall_createUnExistEvent_withStateFalse)
 {
     // req: new ID by newEvent()
@@ -519,6 +527,7 @@ REGISTER_TYPED_TEST_SUITE_P(DominoTest
     , search_all_evNames
 
     , getEventBy_existing_event
+    , evName_untrimmed
     , nonConstInterface_shall_createUnExistEvent_withStateFalse
     , noID_for_not_exist_EvName
 );

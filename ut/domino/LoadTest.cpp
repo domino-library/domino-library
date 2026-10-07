@@ -5,9 +5,11 @@
  */
 // ***********************************************************************************************
 // Why/value:
-// - heavy load: one dest, many subDest, many files, many attrs — pressure OK to DOM?
-// - shuffled attr order, repeated abort, and pong steps (repeatable)
+// * heavy load: one dest, many subDest, many files, many attrs — pressure OK to DOM?
+// * shuffled attr order, repeated abort, and pong steps (repeatable)
 // - every handler on this path is installed
+// * aNeedAbort: random succ/abort to test more scenarios with heavy load
+// * keepDom_: possible is ~50%; to test more scenarios with heavy load
 // ***********************************************************************************************
 #include <algorithm>
 #include <cstdio>
@@ -122,6 +124,7 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
     };
 
     std::shared_ptr<aDom> dom_;
+    bool keepDom_ = false;
     MsgCB barHdlr_;
     std::vector<AttrInfo> attrInfoS_;
 
@@ -309,10 +312,32 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
             std::iter_swap(firstAbort, lastAttr);
     }
 
+    // About half of seeds. MinPriDom has no rmEv, so it always drops.
+    // Own rng: gtest's seed steps by 1 under --gtest_shuffle, so seed&1 would alternate, not stay kept.
+    static bool keepDom()
+    {
+        if constexpr (!CanRmEV<aDom>::value) return false;
+        else return std::mt19937(static_cast<uint32_t>(UnitTest::GetInstance()->random_seed()))() & 1u;
+    }
+
+    std::shared_ptr<aDom> getDom()
+    {
+        if (!keepDom()) return std::make_shared<aDom>("load");
+        keepDom_ = true;
+        auto dom = ObjAnywhere::getObj<aDom>().get();
+        soakReuseDom_forUt(*dom);
+        return dom;
+    }
+
+    void cleanup_() override
+    {
+        if (keepDom_) soakReleaseDom_forUt(*dom_);
+    }
+
     void mainUT(bool aNeedAbort)
     {
-        // setup dom
-        dom_ = std::make_shared<aDom>("load");
+        dom_ = getDom();
+        if (HasFailure()) return;
         barHdlr_ = [this]
         {
             ++nBar_;
@@ -381,10 +406,11 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
             EXPECT_EQ(expectBar(), nBar_);
     }
 
-    void dropDom()
+    void endDom()
     {
         // Queue must already be empty: a queued callback must not run against a destroyed dom.
         ASSERT_EQ(0u, MSG_SELF->nMsg());
+        if (keepDom_) return;  // shared dom stays; cleanup_ only strips handlers
         dom_.reset();
         this->pongMsgSelf_();
         EXPECT_EQ(0u, MSG_SELF->nMsg());  // destructor itself enqueues nothing
@@ -394,25 +420,27 @@ using LoadDom = Types<MinPriDom, MaxNofreeDom, MaxDom>;
 TYPED_TEST_SUITE(LoadTest, LoadDom);
 
 // ***********************************************************************************************
-TYPED_TEST(LoadTest, success_thenDropDom)
+TYPED_TEST(LoadTest, success)
 {
-    SCOPED_TRACE("seed=" + std::to_string(UnitTest::GetInstance()->random_seed()));
+    SCOPED_TRACE("seed=" + std::to_string(UnitTest::GetInstance()->random_seed())
+        + (LoadTest<TypeParam>::keepDom() ? " keepDom" : " dropDom"));
     this->mainUT(false);
     if (this->HasFailure()) return;
 
     this->checkEnd(false);
-    this->dropDom();
+    this->endDom();
 }
 
 // ***********************************************************************************************
-TYPED_TEST(LoadTest, userAbort_thenDropDom)
+TYPED_TEST(LoadTest, userAbort)
 {
-    SCOPED_TRACE("seed=" + std::to_string(UnitTest::GetInstance()->random_seed()));
+    SCOPED_TRACE("seed=" + std::to_string(UnitTest::GetInstance()->random_seed())
+        + (LoadTest<TypeParam>::keepDom() ? " keepDom" : " dropDom"));
     this->mainUT(true);
     if (this->HasFailure()) return;
 
     this->checkEnd(true);
-    this->dropDom();
+    this->endDom();
 }
 
 }  // namespace

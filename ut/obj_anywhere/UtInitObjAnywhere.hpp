@@ -65,7 +65,7 @@ template<class aT>
 struct CanRmAllHdlr<aT, std::void_t<decltype(std::declval<aT>().rmAllHdlr(std::declval<const Domino::EvName&>()))>>
     : std::true_type {};
 
-// names this case passed to newEvent; absent key = first run, drop the whole graph
+// names this case created; absent key = first run, drop the whole graph
 inline std::unordered_map<const TestInfo*, std::unordered_set<Domino::EvName>> s_caseEv_;
 inline const Domino* s_noteDom_ = nullptr;
 inline std::unordered_set<Domino::EvName>* s_noteSet_ = nullptr;
@@ -148,6 +148,44 @@ struct UtInitObjAnywhere : public UniLog, public Test
 };
 
 // ***********************************************************************************************
+// Soak keeps one dom per type. First run of a case has no record, so drop every event;
+// later runs drop only the names this case created.
+template<class aDom>
+void soakReuseDom_forUt(aDom& aDom_)
+{
+    if constexpr (CanRmEV<aDom>::value)
+    {
+        const auto [rec, firstRun] = s_caseEv_.try_emplace(UnitTest::GetInstance()->current_test_info());
+        if (firstRun)
+        {
+            for (auto&& en : aDom_.evNames())
+                EXPECT_TRUE(aDom_.rmEvOK(en));
+        }
+        else
+        {
+            for (auto&& en : rec->second)
+                (void)aDom_.rmEvOK(en);
+        }
+        EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
+        s_noteDom_ = &aDom_;
+        s_noteSet_ = &rec->second;
+        Domino::newEvHook_forUt = noteNewEv_forUt;
+    }
+}
+
+// Drop handlers that close over the dying fixture. Events stay for the next run.
+template<class aDom>
+void soakReleaseDom_forUt(aDom& aDom_)
+{
+    Domino::newEvHook_forUt = nullptr;
+    if constexpr (CanRmAllHdlr<aDom>::value)
+    {
+        for (auto&& en : aDom_.evNames())
+            aDom_.rmAllHdlr(en);
+    }
+}
+
+// ***********************************************************************************************
 // - gtest req template for dom cases (TYPED_TEST_)
 template<class TypeParam>
 struct UtParaDom : public UtInitObjAnywhere
@@ -164,36 +202,12 @@ struct UtParaDom : public UtInitObjAnywhere
     void SetUp() override
     {
         if constexpr (CanRmEV<TypeParam>::value)
-        {
-            // find my evs created in last run
-            const auto [rec, firstRun] = s_caseEv_.try_emplace(UnitTest::GetInstance()->current_test_info());
-            if (firstRun)  // 1 case's first run in soak, rm all ev since no record
-            {
-                for (auto&& en : PARA_DOM->evNames())
-                    EXPECT_TRUE(PARA_DOM->rmEvOK(en));
-            }
-            else  // after first run, drop only my evs - soak as real world
-            {
-                for (auto&& en : rec->second)
-                    (void)PARA_DOM->rmEvOK(en);
-            }
-            EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
-            s_noteDom_ = PARA_DOM.get();
-            s_noteSet_ = &rec->second;
-            Domino::newEvHook_forUt = noteNewEv_forUt;
-        }
+            soakReuseDom_forUt(*PARA_DOM);
     }
     void cleanup_() override
     {
         if constexpr (CanRmEV<TypeParam>::value)
-        {
-            Domino::newEvHook_forUt = nullptr;
-            if constexpr (CanRmAllHdlr<TypeParam>::value)
-            {
-                for (auto&& en : PARA_DOM->evNames())  // rm all hdlr in soak - avoid CB invalid *this
-                    PARA_DOM->rmAllHdlr(en);
-            }
-        }
+            soakReleaseDom_forUt(*PARA_DOM);
         else
         {
             EXPECT_TRUE(ObjAnywhere::emplaceObjOK<TypeParam>(nullptr, *this));
