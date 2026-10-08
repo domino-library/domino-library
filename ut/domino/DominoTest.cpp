@@ -449,6 +449,8 @@ TYPED_TEST_P(DominoTest, getEventBy_existing_event)
 }
 TYPED_TEST_P(DominoTest, evName_untrimmed)
 {
+    if constexpr (CanRmEV<TypeParam>::value) (void)PARA_DOM->rmEvOK("e");  // cleanup env
+
     const auto lead = PARA_DOM->newEvent(" e");   // leading space
     const auto trail = PARA_DOM->newEvent("e ");  // trailing space
     EXPECT_EQ(lead, PARA_DOM->getEventBy(" e"));

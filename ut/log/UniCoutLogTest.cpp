@@ -11,9 +11,12 @@
 #include "StrCoutFSL.hpp"
 
 #include <atomic>
+#include <fcntl.h>
 #include <initializer_list>
 #include <sstream>
+#include <stdlib.h>
 #include <thread>
+#include <unistd.h>
 
 #define UNI_LOG_TEST UniCoutLogTest
 #define UNI_LOG      UniCoutLog
@@ -91,6 +94,47 @@ TEST_F(UniCoutLogTest, setLogFileOK_switchToCout_whenAlreadyCout_noop)
 
     INF("still cout");
     ASSERT_GT(UniCoutLog::logLen(), 0u) << "REQ: can still log after idempotent switch to cout";
+}
+
+// stdout is not a tty under make/CI, so the line-buffered restore never runs unless we lend it a pty
+TEST_F(UniCoutLogTest, setLogFileOK_ttyStdout_lineBuffered)
+{
+    struct Fd
+    {
+        int fd = -1;
+        ~Fd() { if (fd >= 0) ::close(fd); }
+    };
+    struct Stdout
+    {
+        int saved = -1;
+        explicit Stdout(int onto)
+        {
+            saved = ::dup(STDOUT_FILENO);
+            if (saved >= 0) ::dup2(onto, STDOUT_FILENO);
+        }
+        ~Stdout()
+        {
+            if (saved < 0) return;
+            ::dup2(saved, STDOUT_FILENO);
+            ::close(saved);
+        }
+    };
+
+    Fd master;
+    master.fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+    ASSERT_GE(master.fd, 0);
+    ASSERT_EQ(0, ::grantpt(master.fd));
+    ASSERT_EQ(0, ::unlockpt(master.fd));
+    Fd slave;
+    slave.fd = ::open(::ptsname(master.fd), O_RDWR | O_NOCTTY);
+    ASSERT_GE(slave.fd, 0);
+
+    {
+        Stdout back(slave.fd);
+        ASSERT_GE(back.saved, 0);
+        ASSERT_TRUE(UniCoutLog::setLogFileOK("")) << "REQ: tty stdout keeps TRC line-buffered";
+    }
+    ASSERT_TRUE(UniCoutLog::setLogFileOK("")) << "REQ: TRC follows stdout back off the pty";
 }
 
 TEST_F(UniCoutLogTest, setLogFileOK_badPath_fail)

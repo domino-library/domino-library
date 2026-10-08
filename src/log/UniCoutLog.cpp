@@ -22,9 +22,9 @@ namespace
 std::FILE* openTrcFile_() noexcept
 {
     const int fd = ::dup(STDOUT_FILENO);
-    if (fd < 0) return nullptr;
+    if (fd < 0) return nullptr;  // GCOVR_EXCL_BR_LINE dup fails only when the fd table is full
     std::FILE* fp = ::fdopen(fd, "a");
-    if (fp == nullptr) ::close(fd);
+    if (fp == nullptr) ::close(fd);  // GCOVR_EXCL_BR_LINE fdopen fails only after dup, same exhaustion
     return fp;
 }
 
@@ -42,17 +42,17 @@ namespace rlib
 bool UniCoutLog::redirectTrcOK_(const char* aPath) noexcept
 {
     std::FILE* fp = trcFile_();
-    if (fp == nullptr) return false;
+    if (fp == nullptr) return false;  // GCOVR_EXCL_BR_LINE openTrcFile_ failed at startup
 
     const int fd = (aPath == nullptr)
         ? ::dup(STDOUT_FILENO)
         : ::open(aPath, O_WRONLY | O_CREAT | O_APPEND, 0666);
-    if (fd < 0) return false;
+    if (fd < 0) return false;  // GCOVR_EXCL_BR_LINE dup/open fails only when the fd table is full
 
     flockfile(fp);  // glibc: recursive, so fflush below does not deadlock; fwrite waits on this lock
     std::fflush(fp);
     const bool ok = ::dup2(fd, fileno(fp)) >= 0;  // success returns the fd, not 0
-    if (ok)
+    if (ok)  // GCOVR_EXCL_BR_LINE dup2 fails only on a bad fd, which this function just opened
     {
         // glibc accepts setvbuf after fflush. A tty stays line-buffered; a file is fully buffered.
         const int mode = (aPath == nullptr && ::isatty(fd)) ? _IOLBF : _IOFBF;
@@ -65,7 +65,7 @@ bool UniCoutLog::redirectTrcOK_(const char* aPath) noexcept
 
 void UniCoutLog::flushTrc_() noexcept
 {
-    if (std::FILE* fp = trcFile_()) std::fflush(fp);
+    if (std::FILE* fp = trcFile_()) std::fflush(fp);  // GCOVR_EXCL_BR_LINE null only if openTrcFile_ failed
 }
 
 // ***********************************************************************************************
@@ -86,10 +86,10 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
     try {
         if (aFileName.empty())
         {
-            if (! redirectTrcOK_(nullptr))
+            if (! redirectTrcOK_(nullptr))  // GCOVR_EXCL_BR_LINE same fd-table failure as redirectTrcOK_
             {
-                cout << "ERR(UniCoutLog): can't restore TRC to stdout" << endl;
-                return false;
+                cout << "ERR(UniCoutLog): can't restore TRC to stdout" << endl;  // GCOVR_EXCL_LINE GCOVR_EXCL_BR_LINE
+                return false;  // GCOVR_EXCL_LINE
             }
             cout << "INF(UniCoutLog): switch to cout" << endl;
             out_ = &std::cout;
@@ -126,7 +126,7 @@ void UniCoutLog::trcPrintf(const char* fmt, ...) noexcept
     va_start(ap, fmt);
     auto [buf, n] = mt_formatTRC(fmt, ap);
     va_end(ap);
-    if (std::FILE* fp = trcFile_()) std::fwrite(buf, 1, size_t(n), fp);
+    if (std::FILE* fp = trcFile_()) std::fwrite(buf, 1, size_t(n), fp);  // GCOVR_EXCL_BR_LINE null only if openTrcFile_ failed
 }
 
 // ***********************************************************************************************
