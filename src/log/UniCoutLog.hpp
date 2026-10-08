@@ -9,7 +9,7 @@
 //   . MT safe log:
 //     . UniSmartLog is NOT; UniCoutLog is YES & simplest
 //     . INF/WRN/ERR/HID: MT safe
-//     . TRC: almost MT safe, except @fclose
+//     . TRC: highest perf; MT safe
 //   . encapsulate cout/file for eg:
 //     . UT
 //     . simplest log for debug
@@ -25,7 +25,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -75,10 +74,9 @@ public:
     [[nodiscard]] static bool setLogFileOK(const std::string& aFileName) noexcept;
 
 private:
-    static void resetTrcFp_(std::FILE* aNewFp = stdout) noexcept {
-        auto* old = trcFp_.exchange(aNewFp, std::memory_order_acq_rel);
-        if (old != stdout && old != nullptr) std::fclose(old);
-    }
+    // nullptr = stdout. dup2 under flockfile; the FILE* stays put so fwrite cannot use-after-free
+    static bool redirectTrcOK_(const char* aPath) noexcept;
+    static void flushTrc_() noexcept;
 
     // -------------------------------------------------------------------------------------------
 public:
@@ -86,7 +84,6 @@ public:
     static std::atomic<size_t>     nLogLine_;  // ut only, simpler here
     static std::ostream*           out_;
     static std::ofstream           file_;
-    static std::atomic<std::FILE*> trcFp_;  // TRC()
 
 #ifdef IN_ALL_UT
     // -------------------------------------------------------------------------------------------
@@ -99,7 +96,7 @@ public:
     {
         std::lock_guard<std::recursive_mutex> guard(coutMutex_());  // workers may still be logging
         out_->flush();
-        std::fflush(trcFp_);
+        flushTrc_();
     }
     static void rawDumpAll_forUt() noexcept {}  // cout's buf needs the lock; Die() must not take it
 
@@ -108,7 +105,7 @@ public:
         nLogLine_ = 0;
         out_ = &std::cout;
         file_.close();
-        resetTrcFp_();
+        redirectTrcOK_(nullptr);
     }
     static size_t logLen(const LogName& = ULN_DEFAULT) { return nLogLine_; }
 #endif
@@ -139,4 +136,5 @@ using UniLog = UniCoutLog;
 // 2026-09-20  CSZ       - dropAllBuf_forUt / forceSaveAll_forUt stubs (SmartLog dual)
 // 2026-10-01  CSZ       5)MT safe UniCoutLog
 // 2026-10-02  CSZ       - enhance log when soak failed
+// 2026-10-08  CSZ       - TRC: MT safe
 // ***********************************************************************************************

@@ -14,6 +14,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <exception>
 #include <mutex>
@@ -120,6 +121,7 @@ inline const char* mt_exceptInfo() noexcept
 inline const char* mt_timestamp() noexcept
 {
     static thread_local char buf[] = "ddd/HH:MM:SS.123456";  // thread_local is MT safe
+    static_assert(sizeof(buf) == 20, "mt_formatTRC copies the 19 chars before '\\0'");
     static thread_local std::time_t cachedSec_ = 0;  // same-sec cache (-15%): skip localtime_r+strftime
 
     const auto nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -153,7 +155,9 @@ struct TrcBuf { const char* data; int len; };
 inline TrcBuf mt_formatTRC(const char* aFormat, va_list ap) noexcept
 {
     static thread_local char buf[256];
-    const int ntsp = snprintf(buf, sizeof(buf), "%s ", mt_timestamp());
+    constexpr int ntsp = 20;  // 19-char mt_timestamp() + ' '; memcpy skips a snprintf on this hot path
+    std::memcpy(buf, mt_timestamp(), ntsp - 1);
+    buf[ntsp - 1] = ' ';
     int nmsg = vsnprintf(buf + ntsp, sizeof(buf) - ntsp - 1, aFormat, ap);  // -1 for '\n'
     if (nmsg < 0) nmsg = 0;
     int n = ntsp + nmsg;

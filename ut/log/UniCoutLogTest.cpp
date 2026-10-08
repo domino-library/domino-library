@@ -112,7 +112,7 @@ TEST_F(UniCoutLogTest, TRC_endToEnd_fileOutput_and_traceOff)
 
     // TRC-on: trace appears in file
     TRC("event %s id=%d", "setPrev", 42);
-    std::fflush(UniCoutLog::trcFp_);
+    UniCoutLog::forceSaveAll_forUt();
     {
         std::ifstream fin(fname);
         std::string content((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
@@ -124,7 +124,7 @@ TEST_F(UniCoutLogTest, TRC_endToEnd_fileOutput_and_traceOff)
     const auto sizeBefore = std::ifstream(fname, std::ios::ate).tellg();
     traceOn_ = false;
     TRC("should not appear %d", 99);
-    std::fflush(UniCoutLog::trcFp_);
+    UniCoutLog::forceSaveAll_forUt();
     const auto sizeAfter = std::ifstream(fname, std::ios::ate).tellg();
     traceOn_ = true;
     EXPECT_EQ(sizeBefore, sizeAfter) << "REQ: TRC-off produces no output";
@@ -142,7 +142,7 @@ TEST_F(UniCoutLogTest, TRC_longMessage_truncatedToFile)
     // 300-char payload exceeds internal buf[256]
     const std::string longMsg(300, 'Z');
     TRC("%s", longMsg.c_str());
-    std::fflush(UniCoutLog::trcFp_);
+    UniCoutLog::forceSaveAll_forUt();
 
     std::ifstream fin(fname);
     std::string line;
@@ -388,13 +388,102 @@ TEST_F(UniCoutLogTest, trc_threads_eachLineWhole)
     go.store(true);
     for (auto& t : th)
         t.join();
-    std::fflush(UniCoutLog::trcFp_);
+    UniCoutLog::forceSaveAll_forUt();
     EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
 
     std::ifstream fin(fname);
     const std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
     expectWholeTrcLines(text);
     std::remove(fname.c_str());
+}
+
+// - one thread TRC while another switches the private FILE* between a file and stdout
+// - dup2 is under flockfile, so each fwrite lands wholly in one destination
+TEST_F(UniCoutLogTest, trc_whileSetLogFile_eachLineWhole)
+{
+    const std::string fname = "ut_trc_switch_race.log";
+    std::remove(fname.c_str());
+    std::atomic<int> nTrc{0};
+    std::atomic<int> ready{0};
+    std::atomic<bool> go{false};
+    std::atomic<bool> stop{false};
+    std::thread trc([&]
+    {
+        ready.fetch_add(1);
+        while (!go.load()) std::this_thread::yield();
+        while (!stop.load())
+        {
+            TRC("%s", "MARK-T0");
+            nTrc.fetch_add(1);
+            std::this_thread::yield();
+        }
+    });
+    std::thread sw([&]
+    {
+        ready.fetch_add(1);
+        while (!go.load()) std::this_thread::yield();
+        for (int i = 0; i < 20; ++i)
+        {
+            EXPECT_TRUE(UniCoutLog::setLogFileOK(fname));
+            const auto n = nTrc.load();
+            while (nTrc.load() < n + 2) std::this_thread::yield();  // a TRC that started after the switch
+            EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
+        }
+        stop.store(true);
+    });
+    while (ready.load() < 2) std::this_thread::yield();
+    go.store(true);
+    trc.join();
+    sw.join();
+    UniCoutLog::forceSaveAll_forUt();
+
+    std::ifstream fin(fname);
+    const std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+    expectWholeTrcLines(text);
+    std::remove(fname.c_str());
+}
+
+// - switch must flush the TRC buffer into the old file, then later TRC goes to stdout
+TEST_F(UniCoutLogTest, TRC_followsSwitch_fileThenCout)
+{
+    const std::string fname = "ut_trc_follow.log";
+    std::remove(fname.c_str());
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(fname));
+    TRC("%s", "IN-FILE");  // still buffered; the switch below must flush it
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(""));
+    TRC("%s", "IN-COUT");
+    UniCoutLog::forceSaveAll_forUt();
+
+    std::ifstream fin(fname);
+    const std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("IN-FILE"), std::string::npos) << "REQ: switch flushes buffered TRC to the old file";
+    EXPECT_EQ(text.find("IN-COUT"), std::string::npos) << "REQ: TRC follows the switch back to stdout";
+    std::remove(fname.c_str());
+}
+
+// - file A straight to file B, no cout in between: each file keeps only its own TRC
+TEST_F(UniCoutLogTest, TRC_followsSwitch_fileToFile)
+{
+    const std::string fileA = "ut_trc_follow_a.log";
+    const std::string fileB = "ut_trc_follow_b.log";
+    std::remove(fileA.c_str());
+    std::remove(fileB.c_str());
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(fileA));
+    TRC("%s", "IN-A");
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(fileB));
+    TRC("%s", "IN-B");
+    UniCoutLog::forceSaveAll_forUt();
+
+    std::ifstream finA(fileA);
+    const std::string textA((std::istreambuf_iterator<char>(finA)), std::istreambuf_iterator<char>());
+    std::ifstream finB(fileB);
+    const std::string textB((std::istreambuf_iterator<char>(finB)), std::istreambuf_iterator<char>());
+    EXPECT_NE(textA.find("IN-A"), std::string::npos) << "REQ: A kept the TRC from before the switch";
+    EXPECT_EQ(textA.find("IN-B"), std::string::npos) << "REQ: B's TRC did not land in A";
+    EXPECT_NE(textB.find("IN-B"), std::string::npos) << "REQ: B got the TRC from after the switch";
+    EXPECT_EQ(textB.find("IN-A"), std::string::npos) << "REQ: A's TRC was flushed before the switch";
+    std::remove(fileA.c_str());
+    std::remove(fileB.c_str());
 }
 
 }  // namespace rlib

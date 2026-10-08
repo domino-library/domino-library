@@ -8,11 +8,66 @@
 #include "UniCoutLog.hpp"
 
 #include <cstdarg>
+#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
 
 using namespace std;
 
+namespace
+{
+// one FILE* for the process. Never swapped. Not closed here: a TRC during static
+// destruction still has a live stream, and libc flushes it after that.
+// Switching the destination is dup2 under flockfile (the same lock fwrite takes).
+std::FILE* openTrcFile_() noexcept
+{
+    const int fd = ::dup(STDOUT_FILENO);
+    if (fd < 0) return nullptr;
+    std::FILE* fp = ::fdopen(fd, "a");
+    if (fp == nullptr) ::close(fd);
+    return fp;
+}
+
+std::FILE* trcFile_() noexcept
+{
+    static std::FILE* const fp = openTrcFile_();
+    return fp;
+}
+}  // namespace
+
 namespace rlib
 {
+
+// ***********************************************************************************************
+bool UniCoutLog::redirectTrcOK_(const char* aPath) noexcept
+{
+    std::FILE* fp = trcFile_();
+    if (fp == nullptr) return false;
+
+    const int fd = (aPath == nullptr)
+        ? ::dup(STDOUT_FILENO)
+        : ::open(aPath, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd < 0) return false;
+
+    flockfile(fp);  // glibc: recursive, so fflush below does not deadlock; fwrite waits on this lock
+    std::fflush(fp);
+    const bool ok = ::dup2(fd, fileno(fp)) >= 0;  // success returns the fd, not 0
+    if (ok)
+    {
+        // glibc accepts setvbuf after fflush. A tty stays line-buffered; a file is fully buffered.
+        const int mode = (aPath == nullptr && ::isatty(fd)) ? _IOLBF : _IOFBF;
+        (void)std::setvbuf(fp, nullptr, mode, BUFSIZ);
+    }
+    funlockfile(fp);
+    ::close(fd);
+    return ok;
+}
+
+void UniCoutLog::flushTrc_() noexcept
+{
+    if (std::FILE* fp = trcFile_()) std::fflush(fp);
+}
+
 // ***********************************************************************************************
 UniCoutLog::Line UniCoutLog::oneLog() noexcept
 {
@@ -31,30 +86,27 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
     try {
         if (aFileName.empty())
         {
+            if (! redirectTrcOK_(nullptr))
+            {
+                cout << "ERR(UniCoutLog): can't restore TRC to stdout" << endl;
+                return false;
+            }
             cout << "INF(UniCoutLog): switch to cout" << endl;
             out_ = &std::cout;
-            resetTrcFp_();
             if (file_.is_open()) file_.close();  // safe: dump buf; no fd leak
             return true;
         }
 
         ofstream newFile(aFileName, ios::app);
-        if (! newFile)
+        if (! newFile || ! redirectTrcOK_(aFileName.c_str()))  // redirect not called when newFile failed
         {
             cout << "ERR(UniCoutLog): can't open log file " << aFileName << endl;
-            return false;
-        }
-        FILE* newFp = std::fopen(aFileName.c_str(), "a");
-        if (! newFp)
-        {
-            cout << "ERR(UniCoutLog): can't fopen log file " << aFileName << endl;
             return false;
         }
 
         cout << "INF(UniCoutLog): switch to log file " << aFileName << endl;
         file_ = std::move(newFile);
         out_ = &file_;
-        resetTrcFp_(newFp);
         return true;
     } catch (...)
     {
@@ -64,19 +116,17 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
 }
 
 // ***********************************************************************************************
-// - TRC(): mt_formatTRC (thread_local) + fwrite
-// - MT safe : yes. C11 fwrite locks trcFp_. Does not take coutMutex_() (cout's lock);
-//   sharing that lock would put TRC back on the slow path.
-//   . fwrite to trcFp_ (FILE*): faster than ostream::write on 300K calls (507ms -> 260ms)
-//   . trcFp_ tracks out_ via setLogFileOK(): stdout when cout, fopen'd when file
-//   . setLogFileOK's fclose(old trcFp_) is not synchronized with an in-flight fwrite
+// - TRC(): mt_formatTRC (thread_local) + fwrite to the private FILE*
+// - MT safe : yes. Does not take coutMutex_() (that lock would put TRC back on the slow path).
+//   . fwrite: faster than ostream::write on 300K calls (507ms -> 260ms)
+//   . FILE* is stable. setLogFileOK dup2's under flockfile, which fwrite also takes.
 void UniCoutLog::trcPrintf(const char* fmt, ...) noexcept
 {
     va_list ap;
     va_start(ap, fmt);
     auto [buf, n] = mt_formatTRC(fmt, ap);
     va_end(ap);
-    std::fwrite(buf, 1, size_t(n), trcFp_);  // fwrite MT safe per C11; trcFp_ atomic
+    if (std::FILE* fp = trcFile_()) std::fwrite(buf, 1, size_t(n), fp);
 }
 
 // ***********************************************************************************************
@@ -92,6 +142,5 @@ UniCoutLog              UniCoutLog::defaultUniLog_;
 std::atomic<size_t>     UniCoutLog::nLogLine_ = 0;
 std::ostream*           UniCoutLog::out_ = &std::cout;
 std::ofstream           UniCoutLog::file_;
-std::atomic<std::FILE*> UniCoutLog::trcFp_ = stdout;
 
 }  // namespaces
