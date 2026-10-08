@@ -243,6 +243,53 @@ TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_all)
     PARA_DOM->setState({{"event", true}});
     this->pongMsgSelf_();
 }
+TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_allEv)
+{
+    PARA_DOM->setHdlr("e0", this->hdlr0_);
+    PARA_DOM->multiHdlrOnSameEv("e0", this->hdlr1_, "this->hdlr1_");
+    PARA_DOM->multiHdlrOnSameEv("e1", this->hdlr2_, "this->hdlr2_");
+
+    PARA_DOM->rmAllHdlr();
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e0")) << "REQ: rm HdlrDom's & MultiDom's";
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e1")) << "REQ: rm-ed";
+
+    EXPECT_CALL(*this, hdlr0()).Times(0);
+    EXPECT_CALL(*this, hdlr1()).Times(0);
+    EXPECT_CALL(*this, hdlr2()).Times(0);
+    PARA_DOM->setState({{"e0", true}, {"e1", true}});
+    this->pongMsgSelf_();
+}
+TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_allEv_onRoad)
+{
+    PARA_DOM->setHdlr("e0", this->hdlr0_);
+    PARA_DOM->multiHdlrOnSameEv("e0", this->hdlr1_, "this->hdlr1_");
+    PARA_DOM->setState({{"e0", true}});  // 2 cb on road
+    EXPECT_TRUE(MSG_SELF->nMsg());
+    PARA_DOM->rmAllHdlr();
+
+    EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: rm hdlr on-road
+    EXPECT_CALL(*this, hdlr1()).Times(0);
+    this->pongMsgSelf_();
+}
+TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_allEv_hdlrDtorReAdd_safe)
+{
+    struct CallInDtor
+    {
+        MsgCB cb_;
+        ~CallInDtor() { cb_(); }
+    };
+    auto callInDtor = std::make_shared<CallInDtor>();
+    callInDtor->cb_ = [this]{ PARA_DOM->multiHdlrOnSameEv("e1", this->hdlr1_, "this->hdlr1_"); };
+    PARA_DOM->multiHdlrOnSameEv("e0", [callInDtor = std::move(callInDtor)]{}, "dtor");
+
+    PARA_DOM->rmAllHdlr();  // REQ: re-enter dom in hdlr's dtor
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e0")) << "REQ: rm-ed";
+    EXPECT_EQ(1u, PARA_DOM->nHdlr("e1")) << "REQ: hdlr added by dtor stays";
+
+    EXPECT_CALL(*this, hdlr1());
+    PARA_DOM->setState({{"e1", true}});
+    this->pongMsgSelf_();
+}
 TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_subtree)
 {
     PARA_DOM->setHdlr("/A", this->hdlr0_);
@@ -404,6 +451,9 @@ REGISTER_TYPED_TEST_SUITE_P(MultiHdlrDominoTest
     , rmHdlr_byHdlrName
     , rmLegacyHdlr_byNoHdlrName
     , rmHdlr_all
+    , rmHdlr_allEv
+    , rmHdlr_allEv_onRoad
+    , rmHdlr_allEv_hdlrDtorReAdd_safe
     , rmHdlr_invalid
     , rmHdlr_subtree
 

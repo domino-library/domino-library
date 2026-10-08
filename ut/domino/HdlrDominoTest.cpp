@@ -6,6 +6,7 @@
  */
 // ***********************************************************************************************
 #include <gmock/gmock.h>
+#include <memory>
 #include <set>
 #include <stdexcept>
 #include <type_traits>
@@ -288,6 +289,69 @@ TYPED_TEST_P(HdlrDominoTest, rmHdlrOnRoad_noCallback)
     EXPECT_CALL(*this, hdlr1());
     this->pongMsgSelf_();  // manual trigger on road cb
 }
+
+// ***********************************************************************************************
+// rm all hdlr: eg hdlr owner dies but dom stays
+// ***********************************************************************************************
+TYPED_TEST_P(HdlrDominoTest, rmAllHdlr_thenNoCallback_evStay)
+{
+    PARA_DOM->setHdlr("e0", this->hdlr0_);
+    PARA_DOM->setLinkedHdlr("e1", this->hdlr1_, "e");
+    const auto e0 = PARA_DOM->getEventBy("e0");
+
+    PARA_DOM->rmAllHdlr();
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e0")) << "REQ: rm-ed";
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e1")) << "REQ: rm-ed";
+    EXPECT_EQ(e0, PARA_DOM->getEventBy("e0")) << "REQ: ev stays";
+
+    EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: no call since rm
+    EXPECT_CALL(*this, hdlr1()).Times(0);
+    PARA_DOM->setState({{"e0", true}, {"e", true}});
+    EXPECT_TRUE(PARA_DOM->state("e1")) << "REQ: link stays";
+    this->pongMsgSelf_();
+}
+TYPED_TEST_P(HdlrDominoTest, rmAllHdlrOnRoad_noCallback)
+{
+    PARA_DOM->setHdlr("e0", this->hdlr0_);
+    PARA_DOM->setLinkedHdlr("e1", this->hdlr1_, "e");
+    PARA_DOM->setState({{"e0", true}, {"e", true}});  // cb on road
+    EXPECT_TRUE(MSG_SELF->nMsg());
+    PARA_DOM->rmAllHdlr();
+
+    EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: rm hdlr on-road
+    EXPECT_CALL(*this, hdlr1()).Times(0);
+    this->pongMsgSelf_();
+}
+TYPED_TEST_P(HdlrDominoTest, rmAllHdlr_thenReAdd_ok)
+{
+    PARA_DOM->rmAllHdlr();  // req: no crash when no hdlr
+    PARA_DOM->setHdlr("e0", this->hdlr0_);
+    PARA_DOM->rmAllHdlr();
+
+    EXPECT_NE(Domino::D_EVENT_FAILED_RET, PARA_DOM->setHdlr("e0", this->hdlr0_)) << "REQ: can re-add";
+    EXPECT_CALL(*this, hdlr0());
+    PARA_DOM->setState({{"e0", true}});
+    this->pongMsgSelf_();
+}
+TYPED_TEST_P(HdlrDominoTest, rmAllHdlr_hdlrDtorReAdd_safe)
+{
+    struct CallInDtor
+    {
+        MsgCB cb_;
+        ~CallInDtor() { cb_(); }
+    };
+    auto callInDtor = std::make_shared<CallInDtor>();
+    callInDtor->cb_ = [this]{ PARA_DOM->setHdlr("e1", this->hdlr1_); };
+    PARA_DOM->setHdlr("e0", [callInDtor = std::move(callInDtor)]{});
+
+    PARA_DOM->rmAllHdlr();  // REQ: re-enter dom in hdlr's dtor
+    EXPECT_EQ(0u, PARA_DOM->nHdlr("e0")) << "REQ: rm-ed";
+    EXPECT_EQ(1u, PARA_DOM->nHdlr("e1")) << "REQ: hdlr added by dtor stays";
+
+    EXPECT_CALL(*this, hdlr1());
+    PARA_DOM->setState({{"e1", true}});
+    this->pongMsgSelf_();
+}
 TYPED_TEST_P(NofreeHdlrDominoTest, rmHdlrOnRoad_thenReAdd_noCallbackUntilReTrigger)
 {
     PARA_DOM->setHdlr("event", this->hdlr0_);
@@ -533,6 +597,11 @@ REGISTER_TYPED_TEST_SUITE_P(HdlrDominoTest
     , rmHdlr_thenNoCallback
     , rmHdlr_fail
     , rmHdlrOnRoad_noCallback
+
+    , rmAllHdlr_thenNoCallback_evStay
+    , rmAllHdlrOnRoad_noCallback
+    , rmAllHdlr_thenReAdd_ok
+    , rmAllHdlr_hdlrDtorReAdd_safe
 
     , GOLD_force_call
     , force_call_invalidEv

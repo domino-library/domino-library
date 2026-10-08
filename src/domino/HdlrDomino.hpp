@@ -47,6 +47,7 @@ public:
 
     Domino::Event setHdlr(const Domino::EvName&, MsgCB aHdlr) noexcept;
     [[nodiscard]] bool rmOneHdlrOK(const Domino::EvName&) noexcept;  // rm by EvName
+    virtual void rmAllHdlr() noexcept;  // perf: rm every hdlr of every event (incl on-road); events stay
     void forceAllHdlr(const Domino::EvName& aEN) noexcept { effect_(this->getEventBy(aEN)); }
     [[nodiscard]] virtual size_t nHdlr(const Domino::EvName& aEN) const noexcept { return nHdlr_(this->getEventBy(aEN)); }
 
@@ -147,6 +148,15 @@ Domino::Event HdlrDomino<aDominoType>::setLinkedHdlr(const Domino::EvName& aNewE
 
     // Preconditions above guarantee setHdlr() can install on this fresh event.
     return this->setHdlr(aNewEN, std::move(aHdlr));
+}
+
+// ***********************************************************************************************
+template<class aDominoType>
+void HdlrDomino<aDominoType>::rmAllHdlr() noexcept
+{
+    INF("(HdlrDom) rm all hdlr=" << ev_hdlr_S_.size());
+    std::vector<SharedMsgCB> oldHdlrS;
+    oldHdlrS.swap(ev_hdlr_S_);  // (safe) a hdlr's dtor may re-enter this dom (eg setHdlr)
 }
 
 // ***********************************************************************************************

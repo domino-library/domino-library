@@ -13,7 +13,7 @@
 #include <iostream>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
+#include <vector>
 
 #include "UniLog.hpp"
 #include "MsgSelf.hpp"
@@ -62,18 +62,18 @@ struct CanRmEV<aT, std::void_t<decltype(std::declval<aT>().rmEvOK(std::declval<c
 template<class aT, class = void>
 struct CanRmAllHdlr : std::false_type {};
 template<class aT>
-struct CanRmAllHdlr<aT, std::void_t<decltype(std::declval<aT>().rmAllHdlr(std::declval<const Domino::EvName&>()))>>
+struct CanRmAllHdlr<aT, std::void_t<decltype(std::declval<aT>().rmAllHdlr())>>
     : std::true_type {};
 
-// names this case created; absent key = first run, drop the whole graph
-inline std::unordered_map<const TestInfo*, std::unordered_set<Domino::EvName>> s_caseEv_;
+// Names this case created. Absent key = first run, drop the whole graph.
+inline std::unordered_map<const TestInfo*, std::vector<Domino::EvName>> s_caseEv_;
 inline const Domino* s_noteDom_ = nullptr;
-inline std::unordered_set<Domino::EvName>* s_noteSet_ = nullptr;
+inline std::vector<Domino::EvName>* s_noteNames_ = nullptr;
 
 inline void noteNewEv_forUt(const Domino& dom, const Domino::EvName& name) noexcept
 {
     if (&dom == s_noteDom_)
-        s_noteSet_->insert(name);
+        s_noteNames_->push_back(name);
 }
 
 // ***********************************************************************************************
@@ -165,10 +165,11 @@ void soakReuseDom_forUt(aDom& aDom_)
         {
             for (auto&& en : rec->second)
                 (void)aDom_.rmEvOK(en);
+            rec->second.clear();  // keep capacity
         }
         EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
         s_noteDom_ = &aDom_;
-        s_noteSet_ = &rec->second;
+        s_noteNames_ = &rec->second;
         Domino::newEvHook_forUt = noteNewEv_forUt;
     }
 }
@@ -179,10 +180,7 @@ void soakReleaseDom_forUt(aDom& aDom_)
 {
     Domino::newEvHook_forUt = nullptr;
     if constexpr (CanRmAllHdlr<aDom>::value)
-    {
-        for (auto&& en : aDom_.evNames())
-            aDom_.rmAllHdlr(en);
-    }
+        aDom_.rmAllHdlr();
 }
 
 // ***********************************************************************************************

@@ -49,6 +49,7 @@ public:
     using aDominoType::rmOneHdlrOK;  // rm HdlrDom's by EvName
     [[nodiscard]] bool rmOneHdlrOK(const Domino::EvName&, const HdlrName&) noexcept;  // rm MultiDom's by HdlrName
     void rmAllHdlr(const Domino::EvName&) noexcept;
+    void rmAllHdlr() noexcept override;
     [[nodiscard]] size_t nHdlr(const Domino::EvName& aEN) const noexcept override;
 
 protected:
@@ -127,6 +128,16 @@ size_t MultiHdlrDomino<aDominoType>::nHdlr(const Domino::EvName& aEN) const noex
     const auto ev = this->getEventBy(aEN);
     auto&& ev_hdlrs = ev_hdlrs_S_.find(ev);
     return (ev_hdlrs == ev_hdlrs_S_.end() ? 0 : ev_hdlrs->second.size()) + aDominoType::nHdlr_(ev);
+}
+
+// ***********************************************************************************************
+template<class aDominoType>
+void MultiHdlrDomino<aDominoType>::rmAllHdlr() noexcept
+{
+    aDominoType::rmAllHdlr();
+    INF("(MultiHdlrDom) rm all hdlr=" << ev_hdlrs_S_.size());
+    decltype(ev_hdlrs_S_) oldHdlrsS;
+    oldHdlrsS.swap(ev_hdlrs_S_);  // a hdlr's dtor may re-enter this dom (eg multiHdlrOnSameEv)
 }
 
 // ***********************************************************************************************
