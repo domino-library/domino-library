@@ -22,6 +22,8 @@
 #   . GOLD_entryFn_notify_insteadof_timeout: GTEST_SKIP in case (wall-clock vs nice)
 # - smart soak: real malloc; rss= is the leak signal (stays flat)
 # - asan rss climbs with every thread ever created (dead context kept); not a program leak
+#   . hard_rss_limit_mb = 40% RAM: asan Die() prints debug info before OOM SIGKILL
+#   . ASAN_OPTIONS=hard_rss_limit_mb=<mb> impact asan only (no/little mem inc in tsan/smart)
 # - MALLOC_ARENA_MAX=1: glibc arenas only; asan/tsan replace malloc
 # - lsan checks at exit; this loop does not. still-reachable growth shows only as smart rss
 # - screen tail survives crash: soak.log + soak.log.1 (~10MB each) in the build dir; usage:
@@ -43,6 +45,7 @@ exec > >(tee -p >(LC_ALL=C awk -v f=soak.log 'BEGIN {
 }')) 2>&1
 SEED="${SEED:-$(( ($(date +%s) + $$) % 99999 + 1 ))}"
 echo "initial_seed=${SEED}"
+export ASAN_OPTIONS="hard_rss_limit_mb=$(awk '/^MemTotal:/ {print int($2 / 1024 * 2 / 5)}' /proc/meminfo):${ASAN_OPTIONS:-}"
 # --gtest_color: gtest drops color when stdout is not a tty.
 SOAK=1 TRACE_OFF=1 MALLOC_ARENA_MAX=1 nice -n 19 ./ut_exe \
     --gtest_color=yes --gtest_shuffle --gtest_repeat=-1 --gtest_brief=1 \
