@@ -104,9 +104,13 @@ TYPED_TEST_P(DominoTest, setState_onlyAtChainHead)
     EXPECT_TRUE (PARA_DOM->state("e3")) << "REQ: fail set end";
 
     // REQ: atomic reject — batch mixing valid head + invalid non-head rejects ALL
-    PARA_DOM->newEvent("h1");
-    EXPECT_EQ(0u, PARA_DOM->setState({{"h1", true}, {"e2", true}})) << "REQ: 1 non-head -> reject ALL";
-    EXPECT_FALSE(PARA_DOM->state("h1")) << "REQ: valid head also not set";
+    // "a_fresh" and "a_h1" sort before "e2", so both are visited before the reject.
+    PARA_DOM->newEvent("a_h1");
+    EXPECT_EQ(0u, PARA_DOM->setState({{"a_fresh", true}, {"a_h1", true}, {"e2", true}}))
+        << "REQ: 1 non-head -> reject ALL";
+    EXPECT_FALSE(PARA_DOM->state("a_h1")) << "REQ: valid head also not set";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("a_fresh"))
+        << "REQ: reject creates no new event";
 }
 TYPED_TEST_P(DominoTest, bugFix_shallDeduceAll)
 {
@@ -339,11 +343,9 @@ TYPED_TEST_P(DominoTest, setPrev_failedNoLink)
     PARA_DOM->setState({{"step1", true}});
     EXPECT_TRUE(PARA_DOM->state("step2"));
 
-    // attempt: setPrev("step1", {{"step3", T}, {"step2", T}}) — step2 is next of step1 → loop!
-    // step3(valid) comes before step2(invalid) in map iteration — tests atomic rejection
-    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("step1", {{"step2", true}, {"step3", true}}));
+    // "step0" < "step2": the valid prev is visited before the loop, so a link-as-you-go bug would attach it.
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("step1", {{"step0", true}, {"step2", true}}));
 
-    // REQ: step3 should NOT be linked as prev of step1 despite being valid itself
     // verify: step1 is still a chain head (no prev), setState still works on it
     EXPECT_EQ(1u, PARA_DOM->setState({{"step1", false}})) << "REQ: step1 still a head (no prev created)";
     EXPECT_FALSE(PARA_DOM->state("step2"));

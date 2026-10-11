@@ -77,8 +77,15 @@ TYPED_TEST_P(DataDominoTest, correct_data_destructor)
     EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", MAKE_PTR<TestData>(isDestructed)))
         << "REQ: any type data (4th=TestData)";
     EXPECT_FALSE(isDestructed);
+
+    bool replacedDestructed = false;
+    EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", MAKE_PTR<TestData>(replacedDestructed)))
+        << "REQ: replace data";
+    EXPECT_TRUE(isDestructed) << "REQ: replace drops the previous object";
+    EXPECT_FALSE(replacedDestructed);
+
     EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", nullptr)) << "REQ: remove data";
-    EXPECT_TRUE(isDestructed);
+    EXPECT_TRUE(replacedDestructed);
 }
 
 #define ID_STATE

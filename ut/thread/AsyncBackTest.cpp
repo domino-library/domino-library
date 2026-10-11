@@ -36,8 +36,12 @@ TEST_F(AsyncBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
     )) << "REQ: 2nd task OK";
 
     // 3rd task: rejected (full)
+    std::atomic<bool> rejectedRan{false};
     EXPECT_FALSE(myBack.limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [&rejectedRan] {
+            rejectedRan = true;
+            return make_safe<bool>(true);
+        },
         [](SafePtr<void>) {}
     )) << "REQ: rejected when full";
 
@@ -52,6 +56,7 @@ TEST_F(AsyncBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
     )) << "REQ: accept after slot freed";
 
     drainDoneFut(myBack);
+    EXPECT_FALSE(rejectedRan.load()) << "REQ: rejected task never runs";
 }
 
 }  // namespace

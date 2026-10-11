@@ -85,8 +85,12 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
     )) << "REQ: 3rd task OK";
 
     // 4th task: rejected (full)
+    std::atomic<bool> rejectedRan{false};
     EXPECT_FALSE(myPool.limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [&rejectedRan] {
+            rejectedRan = true;
+            return make_safe<bool>(true);
+        },
         [](SafePtr<void>) {}
     )) << "REQ: rejected when full";
 
@@ -101,6 +105,7 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
     )) << "REQ: accept after slot freed";
 
     drainDoneFut(myPool);
+    EXPECT_FALSE(rejectedRan.load()) << "REQ: rejected task never runs";
 }
 
 // ***********************************************************************************************
