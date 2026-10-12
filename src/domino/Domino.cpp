@@ -27,7 +27,8 @@ void Domino::clearNextable_() noexcept
 // ***********************************************************************************************
 void Domino::deduceStateFrom_(Event aValidEv) noexcept
 {
-    // vector, not std::stack/deque: an empty deque still allocates (libstdc++)
+    // - Must be empty on entry. A leftover id is treated as a tile whose state just changed.
+    // - vector, not std::stack/deque: an empty deque still allocates (libstdc++)
     deduceStack_.push_back(aValidEv);
     while (!deduceStack_.empty())
     {
@@ -95,7 +96,9 @@ Domino::Event Domino::getEventBy(const EvName& aEvName) const noexcept
 // ***********************************************************************************************
 Domino::Event Domino::newEvent(const EvName& aEvName) noexcept
 {
-    if (!aEvName.empty() &&  // otherwise isspace() may UB
+    // - empty: front()/back() is UB. isspace(int) is UB unless the arg is EOF or fits in
+    // - unsigned char — a signed char above 127 promotes to a negative int.
+    if (!aEvName.empty() &&
         (isspace(static_cast<unsigned char>(aEvName.front())) || isspace(static_cast<unsigned char>(aEvName.back())))
     )
         WRN("(Domino) EvName has leading/trailing whitespace: '" << aEvName << "'");
@@ -209,8 +212,9 @@ void Domino::rmEv_(Event aValidEv) noexcept
     pureRmPeers_(aValidEv, trueNextEVs,  prev_[true]);
     pureRmPeers_(aValidEv, falseNextEVs, prev_[false]);
 
-    // rm self resrc
-    pureSetStateOK_(aValidEv, false);  // must before clean ev_en_
+    // - The name must still be in ev_en_: erase() uses it as the key.
+    // - Clearing first erases the empty-name tile (an empty name is valid) and leaves this name on the removed slot.
+    pureSetStateOK_(aValidEv, false);  // its trace also prints that name
     en_ev_.erase(evName_(aValidEv));
     ev_en_[aValidEv].clear();
     HID("[Domino] ev=" << aValidEv);
@@ -228,26 +232,31 @@ void Domino::rmEv_(Event aValidEv) noexcept
 // ***********************************************************************************************
 Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrevEvents) noexcept
 {
-    const auto fromEv = newEvent(aEvName);  // complex by getEventBy(), not worth
-    // - reachability bitmap is reused; only the bits this call sets are cleared
-    // - sized once per growth: states_ plus every new prev this call may create
-    nextable_.resize(states_.size() + aSimuPrevEvents.size());
-    auto mark = [this](Event ev) {
-        nextable_[ev] = true;
-        nextableSet_.push_back(ev);
-    };
-    // deduceStack_ is idle here; reuse it instead of allocating a search stack
-    mark(fromEv);
-    deduceStack_.push_back(fromEv);
-    while (!deduceStack_.empty())
+    // - A rejected call must not leave the names it looked up.
+    // - A name not in the graph yet cannot close a cycle or be both the true and the false prev.
+    const auto fromEv = getEventBy(aEvName);
+    const bool targetIsNew = (fromEv == D_EVENT_FAILED_RET);
+
+    if (!targetIsNew)
     {
-        const auto curEv = deduceStack_.back();
-        deduceStack_.pop_back();
-        for (bool branch : {true, false}) {
-            for (auto&& nextEV : findPeerEVs(curEv, next_[branch])) {
-                if (!nextable_[nextEV]) {
-                    mark(nextEV);  // mark-on-push(than mark-on-pop), avoid dup push & infinite loop
-                    deduceStack_.push_back(nextEV);
+        // reachability bitmap is reused; only the bits this call sets are cleared
+        nextable_.resize(states_.size());
+        auto mark = [this](Event ev) {
+            nextable_[ev] = true;
+            nextableSet_.push_back(ev);
+        };
+        mark(fromEv);
+        deduceStack_.push_back(fromEv);
+        while (!deduceStack_.empty())
+        {
+            const auto curEv = deduceStack_.back();
+            deduceStack_.pop_back();
+            for (bool branch : {true, false}) {
+                for (auto&& nextEV : findPeerEVs(curEv, next_[branch])) {
+                    if (!nextable_[nextEV]) {
+                        mark(nextEV);  // mark-on-push(than mark-on-pop), avoid dup push & infinite loop
+                        deduceStack_.push_back(nextEV);
+                    }
                 }
             }
         }
@@ -255,8 +264,16 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
     // validate loop & conflict
     for (auto&& [prevEn, state] : aSimuPrevEvents)
     {
-        auto&& prevEv = newEvent(prevEn);
-        if (nextable_[prevEv])  // + aSimuPrevEvents.size() so impossible out-bounds
+        if (prevEn == aEvName)  // self-loop, including a name that does not exist yet
+        {
+            ERR("(Domino) !!!Failed since invalid EN=" << aEvName << ", or loop to=" << prevEn);
+            clearNextable_();
+            return D_EVENT_FAILED_RET;
+        }
+        const auto prevEv = getEventBy(prevEn);
+        if (prevEv == D_EVENT_FAILED_RET || targetIsNew)
+            continue;
+        if (nextable_[prevEv])
         {
             ERR("(Domino) !!!Failed since invalid EN=" << aEvName << ", or loop to=" << prevEn);
             clearNextable_();
@@ -273,14 +290,15 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
     clearNextable_();
 
     // set prev
-    pureSetPrev_(fromEv, aSimuPrevEvents);
+    const auto linked = newEvent(aEvName);
+    pureSetPrev_(linked, aSimuPrevEvents);
 
     // deduce all impacted
-    deduceStateFrom_(fromEv);
+    deduceStateFrom_(linked);
 
     // call hdlr
     effect_();
-    return fromEv;
+    return linked;
 }
 
 // ***********************************************************************************************
@@ -339,7 +357,7 @@ Domino::EvName Domino::whyFalse(Event aEv) const noexcept
     }
     HID("(Domino) en=" << ev_en_[aEv]);
 
-    // loop search
+    // Requires a DAG: a cycle does not end. A longer T/F contradiction still yields one root.
     WhyStep step{aEv, false, EvName()};
     while (step.resultEN_.empty()) {
         step.whyFlag_ ? whyTrue_ (step) : whyFalse_(step);

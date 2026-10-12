@@ -71,12 +71,17 @@ Domino::Event PriDomino<aDominoType>::setPriority(const Domino::EvName& aEvName,
         ERR("(PriDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/misleading result");
         return Domino::D_EVENT_FAILED_RET;
     }
+    if (aPri >= EMsgPri_MAX)
+    {
+        ERR("(PriDom) FAILED since invalid pri=" << size_t(aPri) << " for en=" << aEvName);
+        return Domino::D_EVENT_FAILED_RET;
+    }
 
     HID("(PriDom) EvName=" << aEvName << ", newPri=" << size_t(aPri));
     auto&& event = this->newEvent(aEvName);
     if (aPri == aDominoType::getPriority(event))
         ev_pri_S_.erase(event);  // less mem & faster searching
-    else if (aPri < EMsgPri_MAX)
+    else
         ev_pri_S_[event] = aPri;
     return event;
 }

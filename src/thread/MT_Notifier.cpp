@@ -33,7 +33,9 @@ void MT_Notifier::timedwait(const size_t aSec, const size_t aRestNsec) noexcept
     timespec ts{0, 0};
     clock_gettime(CLOCK_MONOTONIC, &ts);  // clock-immune
 
-    const auto ns = ts.tv_nsec + min(aRestNsec, size_t(999'999'999));  // clamp: aRestNsec must < 1s; overflow-safe
+    // Without this clamp, tv_nsec + size_t(-1) wraps: tv_nsec == 0 waits ~584 years,
+    // any other tv_nsec puts the deadline in the past.
+    const auto ns = ts.tv_nsec + min(aRestNsec, size_t(999'999'999));
     ts.tv_sec += (aSec + ns / 1'000'000'000);
     ts.tv_nsec = ns % 1'000'000'000;
 

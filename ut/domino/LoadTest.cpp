@@ -408,7 +408,7 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
 
     void endDom()
     {
-        // Queue must already be empty: a queued callback must not run against a destroyed dom.
+        // Callbacks here close over dom_. The queue must be empty before dom_ dies.
         ASSERT_EQ(0u, MSG_SELF->nMsg());
         if (keepDom_) return;  // shared dom stays; cleanup_ only strips handlers
         dom_.reset();

@@ -44,10 +44,13 @@ TEST_F(MT_NotifierTest, large_nsec_no_crash)
     notif_.timedwait(0, 2'000'000'000);  // REQ: aRestNsec >= 1s -> no crash
 }
 
-TEST_F(MT_NotifierTest, max_nsec_no_crash)
+TEST_F(MT_NotifierTest, nsec_at_least_1s_is_clamped)
 {
-    notif_.mt_notify();
-    notif_.timedwait(0, size_t(-1));  // REQ: extreme ns -> no crash (same as ThreadBackTest::timeout)
+    const auto t0 = chrono::steady_clock::now();
+    notif_.timedwait(0, size_t(-1));  // no pre-notify: this actually waits
+    const auto ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - t0).count();
+    EXPECT_GT(ms, 200) << "REQ: addend >= 1s still waits; unclamped, the deadline is usually already past";
+    EXPECT_LT(ms, 3000) << "REQ: the clamped wait stays under 1s";
 }
 
 // ***********************************************************************************************

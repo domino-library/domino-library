@@ -61,8 +61,21 @@ struct Fut_BackFN {
 };
 using Fut_BackFN_S = std::vector<Fut_BackFN>;  // vector + swap-erase: O(1) rm, better cache
 
+// AsyncBack: ~future from std::async waits for its worker. That worker's last touch of
+// this object is this counter (mt_pingMainTH hits a process-wide notifier, not this).
+// A base is destroyed after the members, so the counter outlives those futures.
+// ThPoolBack's futures do not wait; clean_() joins its workers before members die.
+struct ThreadBack_DoneCount
+{
+protected:
+    ThreadBack_DoneCount() noexcept = default;
+    ~ThreadBack_DoneCount() noexcept = default;
+
+    std::atomic<size_t> mt_nDoneFut_ = 0;
+};
+
 // ***********************************************************************************************
-class ThreadBack
+class ThreadBack : protected ThreadBack_DoneCount
 {
 public:
     virtual ~ThreadBack() noexcept = default;
@@ -85,10 +98,8 @@ public:
 
 protected:
     // -------------------------------------------------------------------------------------------
-    // mt_nDoneFut_ must be declared BEFORE fut_backFN_S_ so it is destroyed AFTER futures
-    // (async thread may call mt_nDoneFut_.fetch_add() while future destructor blocks)
-    std::atomic<size_t>  mt_nDoneFut_ = 0;  // improve main thread to search done thread(s)
-    Fut_BackFN_S fut_backFN_S_;  // must save future till thread end
+    // mt_nDoneFut_ lives in ThreadBack_DoneCount (destroyed after these members).
+    Fut_BackFN_S fut_backFN_S_;  // keep each future until its task is finished
     size_t  maxParallel_ = 0;  // can't rely on fut_backFN_S_.capacity() newTaskOK() can exceed it
 
     // -------------------------------------------------------------------------------------------

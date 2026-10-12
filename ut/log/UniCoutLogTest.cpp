@@ -150,6 +150,13 @@ TEST_F(UniCoutLogTest, setLogFileOK_badPath_fail)
 // - end-to-end: TRC writes formatted trace to file, TRC-off produces nothing
 TEST_F(UniCoutLogTest, TRC_endToEnd_fileOutput_and_traceOff)
 {
+    struct RestoreTrace
+    {
+        bool saved = traceOn_;
+        RestoreTrace() { traceOn_ = true; }
+        ~RestoreTrace() { traceOn_ = saved; }
+    };
+    RestoreTrace restoreTrace;
     const std::string fname = "ut_trc_test.log";
     std::remove(fname.c_str());
     ASSERT_TRUE(UniCoutLog::setLogFileOK(fname));
@@ -170,7 +177,6 @@ TEST_F(UniCoutLogTest, TRC_endToEnd_fileOutput_and_traceOff)
     TRC("should not appear %d", 99);
     UniCoutLog::forceSaveAll_forUt();
     const auto sizeAfter = std::ifstream(fname, std::ios::ate).tellg();
-    traceOn_ = true;
     EXPECT_EQ(sizeBefore, sizeAfter) << "REQ: TRC-off produces no output";
 
     std::remove(fname.c_str());

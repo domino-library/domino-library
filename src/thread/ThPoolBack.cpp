@@ -4,6 +4,7 @@
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
+#include <new>
 #include <utility>
 #include "ThPoolBack.hpp"
 
@@ -66,7 +67,8 @@ void ThPoolBack::mt_threadMain_() noexcept
         SafePtr<void> ret;
         try { ret = job.entry(); }
         catch (...) { HID("(ThPoolBack) entryFN() except=" << mt_exceptInfo()); }  // same as AsyncBack
-        job.entry = nullptr;  // drop captures before main runs backFN
+        // Drop captures before the future is ready: main may run backFN as soon as it is.
+        job.entry = nullptr;
 
         mt_nDoneFut_.fetch_add(1, std::memory_order_release);  // before ready: hdlDoneFut may take it on an older count
         job.prom.set_value(move(ret));
@@ -108,15 +110,30 @@ bool ThPoolBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLo
             return false;
 
         MtTask_ job{std::move(mt_aEntryFN), {}};
+        // The future is recorded before the job is queued. The other order can throw after
+        // the job is queued: the task then runs with no backFN, and mt_nDoneFut_ stays one ahead.
+        // If this queue push throws, drop the future. ~promise would otherwise ready it with
+        // broken_promise; the next completion would run this backFN and spend that count.
         fut_backFN_S_.push_back(Fut_BackFN{job.prom.get_future(), std::move(aBackFN)});
-        {
+        try {
             lock_guard lock(mt_mutex_);
+#ifdef IN_ALL_UT
+            if (failNextQueuePush_forUt) {
+                failNextQueuePush_forUt = false;
+                throw std::bad_alloc();
+            }
+#endif
             mt_taskQ_.push_back(move(job));
+        } catch (...) {
+            fut_backFN_S_.pop_back();
+            throw;
         }
         mt_qCv_.notify_one();  // notify thread pool to run a new task
 
         return true;
-    } catch(...) {  // ut can't cover this branch; rare but safer
+    } catch(...) {
+        // false, and no task kept. A future already pushed is dropped above.
+        // A throw before that (vector growth, mutex) recorded nothing.
         ERR("(ThPoolBack) except=" << mt_exceptInfo() << " in newTaskOK");
         return false;
     }

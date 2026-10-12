@@ -40,8 +40,9 @@
 // - MT safe: no
 // - use-safe: yes with conditions:
 //   . no too many events/.. that use-up mem (impossible in most cases)
-//   . user shall not loop ev-link (impossible unless deliberate)
-//     . domino prevent is not 100%, see UT for details
+//   * user shall not loop ev-link
+//     . domino can reject some loop, but not all (see UT for more info)
+//     . whyFalse() is another way to find a loop
 // - Q&A: (below; lots)
 // ***********************************************************************************************
 #pragma once
@@ -239,14 +240,9 @@ public:
 //     . dangerous: diff func could create EvName at same address in stack
 //     . 021-09-22: all UT, only 41% getEventBy() can benefit by buffer, not worth vs dangerous
 //
-// - why not rm Ev
-//   . may impact related prev/next Ev, complex & out-control
-//   . dangerous: may break deduced path
-//     . rm entire Dom is safer
-//     . not must-have req
-//     . but keep inc Ev is not sustainable (may use up mem), eg swm's dom for version ctrl
-//       . details in RmEvDomino
-//   . can rm hdlr & data
+// - rm a tile only when this dom must keep running (eg version ctrl would use up mem)
+//   . the caller owns the successor left with no prev
+//   . when the whole graph should die, destroy the Domino
 //
 // - why global states (like global_var) via eg ObjAnywhere
 //   * easily bind & auto broadcast (like real dominos)

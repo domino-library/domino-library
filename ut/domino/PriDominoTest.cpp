@@ -52,8 +52,14 @@ TYPED_TEST_P(PriDominoTest, setPriority_thenGetIt)
     PARA_DOM->setPriority("event", EMsgPri_LOW);
     EXPECT_EQ(EMsgPri_LOW, PARA_DOM->getPriority(event)) << "REQ: get updated";
 
-    PARA_DOM->setPriority("event", EMsgPri_MAX);
-    EXPECT_EQ(EMsgPri_LOW, PARA_DOM->getPriority(event)) << "REQ: invalid set";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPriority("event", EMsgPri_MAX))
+        << "REQ: invalid priority is rejected";
+    EXPECT_EQ(EMsgPri_LOW, PARA_DOM->getPriority(event)) << "REQ: invalid set leaves the old priority";
+
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPriority("pri-fresh", EMsgPri_MAX))
+        << "REQ: invalid priority is rejected";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("pri-fresh"))
+        << "REQ: rejected priority does not create the event";
 }
 TYPED_TEST_P(PriDominoTest, defaultPriority)
 {

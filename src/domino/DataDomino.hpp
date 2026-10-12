@@ -66,6 +66,8 @@ S_PTR<void> DataDomino<aDominoType>::getData(const Domino::EvName& aEvName) cons
 template<typename aDominoType>
 bool DataDomino<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, S_PTR<void> aData) noexcept
 {
+    if (!aData && this->getEventBy(aEvName) == Domino::D_EVENT_FAILED_RET)
+        return false;  // nothing to remove; do not create the name
     return ev_data_S_.replaceOK(this->newEvent(aEvName), std::move(aData));
 }
 

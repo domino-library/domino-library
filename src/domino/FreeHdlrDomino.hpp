@@ -58,8 +58,8 @@ void FreeHdlrDomino<aDominoType>::cb_hdlr_(FreeHdlrDomino* aSelfDom, Domino::Eve
 {
     auto hdlr = aWeakHdlr.lock();
     if (! hdlr)
-        return;
-    // hdlr alive => Dom alive here. MsgSelf refuses handleAllMsg() reenter, so a later msg cannot see a dead Dom
+        return;  // cb already dropped: the dom is gone, or this hdlr was removed
+    // cb still owned by the dom, so aSelfDom is alive
     aSelfDom->rmOneHdlrOK_(aValidEv, hdlr);
     try { (*(hdlr.get()))(); }  // setHdlr() forbid cb==null
     catch(...) {  // fprintf: no throw (safe), min print (helpful) w/o extra obj/action/etc (safe)

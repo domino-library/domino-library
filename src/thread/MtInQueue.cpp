@@ -136,7 +136,7 @@ ELE_TID MtInQueue::pop() noexcept
         return ELE_TID(nullptr, typeid(void));
 
     // pop
-    auto ele_tid = move(*it);  // must copy
+    auto ele_tid = move(*it);  // take it out before pop; a ref into cache_ dangles after pop_front
     cache_.pop_front();
     return ele_tid;
 }

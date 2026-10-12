@@ -66,7 +66,7 @@ struct StrCoutFSL_BufHolder
 // ***********************************************************************************************
 class StrCoutFSL  // FSL = Formatted Smart Log
     : public BaseSL
-    , private StrCoutFSL_BufHolder  // must be before std::ostream to init sbuf_ first
+    , private StrCoutFSL_BufHolder  // before std::ostream: the ctor binds &sbuf_, so sbuf_ must already exist
     , public std::ostream  // lightweight: no bidirectional stringbuf overhead
 {
 public :

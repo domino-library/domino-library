@@ -106,12 +106,21 @@ TYPED_TEST_P(DataDominoTest, nonConstInterface_shall_createUnExistEvent_withStat
     EXPECT_FALSE(PARA_DOM->state("e2"));
 }
 
+TYPED_TEST_P(DataDominoTest, removeAbsent_doesNotCreate)
+{
+    EXPECT_FALSE(PARA_DOM->replaceDataOK("dat-rm-absent"))
+        << "REQ: removing data of a new name fails";
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("dat-rm-absent"))
+        << "REQ: failed remove does not create the event";
+}
+
 // ***********************************************************************************************
 REGISTER_TYPED_TEST_SUITE_P(DataDominoTest
     , GOLD_setValue_thenGetIt
     , setShared_thenGetIt_thenRmIt
     , correct_data_destructor
     , nonConstInterface_shall_createUnExistEvent_withStateFalse
+    , removeAbsent_doesNotCreate
 );
 using AnyDatDom = Types<MinDatDom, MinWbasicDatDom, MaxNofreeDom, MaxDom>;
 INSTANTIATE_TYPED_TEST_SUITE_P(PARA, DataDominoTest, AnyDatDom);

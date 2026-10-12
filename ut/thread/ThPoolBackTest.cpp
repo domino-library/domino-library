@@ -109,6 +109,31 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
 }
 
 // ***********************************************************************************************
+// The queue refuses the job after the future is recorded. Without dropping that future,
+// ~promise readies it with broken_promise and the next completion runs this backFN.
+TEST_F(ThPoolBackTest, queuePushFail_leavesNoFuture)
+{
+    struct ClearFail { ~ClearFail() { ThPoolBack::failNextQueuePush_forUt = false; } } clearFail;
+    ThPoolBack pool(1, 4);
+    int nBack = 0;
+    ThPoolBack::failNextQueuePush_forUt = true;
+    EXPECT_FALSE(pool.newTaskOK(
+        [] { return make_safe<bool>(true); },
+        [&](SafePtr<void>) { ++nBack; }
+    )) << "REQ: queue push failure rejects the task";
+    ASSERT_EQ(0u, pool.nFut()) << "REQ: rejected task leaves no future";
+
+    EXPECT_TRUE(pool.newTaskOK(
+        [] { return make_safe<bool>(true); },
+        [&](SafePtr<void>) { nBack += 10; }
+    ));
+    while (pool.hdlDoneFut() == 0)
+        timedwait();
+    EXPECT_EQ(10, nBack) << "REQ: the failed task's backFN does not spend the next completion";
+    EXPECT_EQ(0u, pool.nFut());
+}
+
+// ***********************************************************************************************
 // task1 returns only after stop, so the worker exits without taking the queued task2
 TEST_F(ThPoolBackTest, dtor_discards_task_still_queued)
 {

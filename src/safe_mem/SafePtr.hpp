@@ -24,13 +24,12 @@
 //   * max (safe + convenient) / (mem + perf + impl)
 //   . SafeWeak: weak reference support (lock()/expired())
 //   . Container support: usable as map/unordered_map key
-//   . Exception safe: construction exception → nullptr
+//   . Exception safe: make_safe/new_safe catch a throwing T constructor and return nullptr
 //
 // CONSTRAINTS:
 //   - Single-thread-use as shared_ptr (e.g., after MtInQueue.mt_push(), don't touch SafePtr)
-//   - T must be internally safe (eg no constructor exceptions expected)
 //   * Circular reference: user's duty (like shared_ptr)
-//   . eg force-cast SafePtr<T> to SafePtr<U>: user's duty
+//     . eg force-cast SafePtr<T> to SafePtr<U>: user's duty
 // ***********************************************************************************************
 #pragma once
 

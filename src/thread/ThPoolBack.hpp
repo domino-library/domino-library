@@ -71,6 +71,7 @@ private:
 #ifdef IN_ALL_UT
 public:
     bool mt_stopping_forUt() const noexcept { return mt_stopAllTH_.load(); }
+    static inline bool failNextQueuePush_forUt = false;  // next newTaskOK throws before the queue takes the job
 #endif
 };
 

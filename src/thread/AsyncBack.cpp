@@ -34,15 +34,18 @@ bool AsyncBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLog
         if (! ThreadBack::newTaskOK(mt_aEntryFN, aBackFN, oneLog))
             return false;
 
-        // create new thread
-        // - impossible thread alive but AsyncBack destructed, since ~AsyncBack() will wait all fut over
-        // - &mt_nDoneFut is better than "this" that can access other non-MT-safe member
+        // Grow first. push_back after async() must not allocate: if it threw, ~future would
+        // block until the task finished, and mt_nDoneFut_ would stay one ahead with no backFN.
+        // Pass &mt_nDoneFut_, not this: this would let the worker touch main-thread members.
+        // ~future from std::async waits out that worker, so the thread cannot outlive this object.
+        if (fut_backFN_S_.size() == fut_backFN_S_.capacity())
+            fut_backFN_S_.reserve(fut_backFN_S_.size() * 2 + 1);
         fut_backFN_S_.push_back(Fut_BackFN{
             async(launch::async, &AsyncBack::mt_thMain_, std::move(mt_aEntryFN), std::ref(mt_nDoneFut_)),
             std::move(aBackFN)
         });
         return true;
-    } catch(...) {  // - ut can't cover this branch
+    } catch(...) {  // reserve or async() failed before a task was kept
         ERR("(AsyncBack) except=" << mt_exceptInfo() << " to create new thread!!!");
         return false;
     }

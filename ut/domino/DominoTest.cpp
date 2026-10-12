@@ -178,6 +178,10 @@ TYPED_TEST_P(DominoTest, invalid_loopSelf)
 {
     EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("e1", {{"e1", true }})) << "REQ: can't loop self";
     EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("e1", {{"e1", false}})) << "REQ: can't loop self";
+
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("fresh-self", {{"fresh-self", true}}));
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("fresh-self"))
+        << "REQ: rejected self-loop does not create the event";
 }
 TYPED_TEST_P(DominoTest, invalid_deepLoop)
 {
@@ -345,6 +349,8 @@ TYPED_TEST_P(DominoTest, setPrev_failedNoLink)
 
     // "step0" < "step2": the valid prev is visited before the loop, so a link-as-you-go bug would attach it.
     EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("step1", {{"step0", true}, {"step2", true}}));
+    EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("step0"))
+        << "REQ: rejected setPrev does not create the prev it checked before the loop";
 
     // verify: step1 is still a chain head (no prev), setState still works on it
     EXPECT_EQ(1u, PARA_DOM->setState({{"step1", false}})) << "REQ: step1 still a head (no prev created)";
@@ -458,6 +464,12 @@ TYPED_TEST_P(DominoTest, evName_untrimmed)
     EXPECT_EQ(lead, PARA_DOM->getEventBy(" e"));
     EXPECT_EQ(trail, PARA_DOM->getEventBy("e "));
     EXPECT_EQ(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("e")) << "REQ: warn only, never trim";
+
+    // High bytes are not whitespace. They stay part of the id.
+    const string hi = string("\xA0") + "e" + string("\xFF");
+    const auto hiEv = PARA_DOM->newEvent(hi);
+    EXPECT_EQ(hiEv, PARA_DOM->getEventBy(hi)) << "REQ: high-bit name is kept, not trimmed";
+    EXPECT_NE(hiEv, lead);
 }
 TYPED_TEST_P(DominoTest, nonConstInterface_shall_createUnExistEvent_withStateFalse)
 {

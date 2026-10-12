@@ -17,6 +17,13 @@ namespace rlib
 // - end-to-end: TRC writes to DEFAULT SmartLog, TRC-off produces nothing
 TEST_F(UniSmartLogTest, TRC_endToEnd_smartLogOutput_and_traceOff)
 {
+    struct RestoreTrace
+    {
+        bool saved = traceOn_;
+        RestoreTrace() { traceOn_ = true; }
+        ~RestoreTrace() { traceOn_ = saved; }
+    };
+    RestoreTrace restoreTrace;
     // TRC-on: trace appears in defaultUniLog_'s SmartLog buffer
     const auto lenBefore = UniSmartLog::defaultUniLog_.trcOut().size();
     TRC("event %s id=%d", "setPrev", 42);
@@ -27,7 +34,6 @@ TEST_F(UniSmartLogTest, TRC_endToEnd_smartLogOutput_and_traceOff)
     traceOn_ = false;
     TRC("should not appear %d", 99);
     const auto lenAfterOff = UniSmartLog::defaultUniLog_.trcOut().size();
-    traceOn_ = true;
     EXPECT_EQ(lenAfterOn, lenAfterOff) << "REQ: TRC-off produces no output";
 }
 
