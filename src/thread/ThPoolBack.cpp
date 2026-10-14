@@ -95,11 +95,7 @@ void ThPoolBack::clean_() noexcept
     for (auto&& th : thPool_)
         if (th.joinable())
             th.join();  // safer: avoid terminate when destruct th
-
-    // handle completed-but-unprocessed tasks before destruction
-    (void)hdlDoneFut();
-    if (!fut_backFN_S_.empty())
-        HID("(ThPoolBack) discarding " << fut_backFN_S_.size() << " pending tasks (backFN not called)");
+    // backFN is discarded by ~ThreadBack. hdlDoneFut() here lets backFN call newTaskOK on a dying pool
 }
 
 // ***********************************************************************************************

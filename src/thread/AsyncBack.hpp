@@ -40,7 +40,6 @@
 //   . not support TOO many threads (used-up thread resource; impossible in most/normal cases)
 //     . not limit usr to create more async than MAX_ASYNC, but usr cover the safety (like std lib)
 //   . lower performance than eg thread pool (but simpler impl than thread pool)
-//   . destructor will FOREVER wait all thread finished
 //   . no duty to any unsafe behavior of MT_TaskEntryFN & TaskBackFN
 // - MT safe:
 //   . MT_/mt_ prefix: yes
@@ -59,7 +58,6 @@ class AsyncBack : public ThreadBack
 public:
     // @param aMaxAsync: max threads; 0 -> MAX_ASYNC (warning)
     explicit AsyncBack(size_t aMaxAsync = MAX_ASYNC) noexcept(false);
-    // destruct-future will block till thread done (ut verified) - so default ~AsyncBack() is safe
 
     [[nodiscard]] bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
 
@@ -83,6 +81,7 @@ private:
 // 2024-07-10  CSZ       - mv common to base=ThreadBack
 // 2025-03-21  CSZ       3)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-04-09  CSZ       - can limit max async
+// 2026-10-13  CSZ       - enhance & unify dtor
 // ***********************************************************************************************
 // - Q&A:
 //   . MT_/mt_ prefix

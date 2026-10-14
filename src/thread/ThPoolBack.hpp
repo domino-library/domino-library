@@ -12,7 +12,6 @@
 //
 // - Use-safe: yes with condition:
 //   . not support TOO many tasks that exceeds fut_backFN_S_/mt_nDoneFut_/.. (impossible in most/normal cases)
-//   . destructor will FOREVER wait all thread finished
 // - MT safe:
 //   . MT_/mt_ prefix: yes
 //   . others: no (must call in main thread)
@@ -84,4 +83,5 @@ public:
 // 2026-04-09  CSZ       - can limit max tasks
 // 2026-10-02  CSZ       - count +1 before the future is ready
 //                       - entryFN except stays on the worker (tsan)
+// 2026-10-13  CSZ       - enhance & unify dtor
 // ***********************************************************************************************

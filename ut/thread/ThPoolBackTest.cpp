@@ -135,7 +135,7 @@ TEST_F(ThPoolBackTest, queuePushFail_leavesNoFuture)
 
 // ***********************************************************************************************
 // task1 returns only after stop, so the worker exits without taking the queued task2
-TEST_F(ThPoolBackTest, dtor_discards_task_still_queued)
+TEST_F(ThPoolBackTest, dtor_discards_finished_and_queued_backFN)
 {
     std::atomic<bool> inTask{false};
     std::atomic<int> nBack{0};
@@ -155,7 +155,7 @@ TEST_F(ThPoolBackTest, dtor_discards_task_still_queued)
             [&](SafePtr<void>) { nBack += 10; }
         ));
     }
-    EXPECT_EQ(1, nBack.load()) << "REQ: dtor runs the finished backFN and drops the queued one";
+    EXPECT_EQ(0, nBack.load()) << "REQ: dtor drops the finished backFN and the queued one";
 }
 
 // ***********************************************************************************************

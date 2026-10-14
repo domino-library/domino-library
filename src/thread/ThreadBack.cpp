@@ -11,6 +11,13 @@ using namespace std;
 namespace rlib
 {
 // ***********************************************************************************************
+ThreadBack::~ThreadBack() noexcept
+{
+    if (const auto n = fut_backFN_S_.size())
+        WRN("(ThreadBack) discard nFut=" << n);
+}
+
+// ***********************************************************************************************
 size_t ThreadBack::hdlDoneFut(UniLog& oneLog) noexcept
 {
     if (! mt_reqMainTH(__func__))

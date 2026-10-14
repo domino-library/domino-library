@@ -504,5 +504,18 @@ TEST_F(THREAD_BACK_TEST, limitMax_stays_at_constructMax_evenAfter_nonLimit_grow)
 
     drainDoneFut(*back);
 }
+TEST_F(THREAD_BACK_TEST, dtor_discards_ready_backFN)
+{
+    std::atomic<int> nBack{0};
+    {
+        THREAD_BACK_TYPE back(1);
+        EXPECT_TRUE(back.newTaskOK(
+            [] { return make_safe<bool>(true); },
+            [&](SafePtr<void>) { nBack += 1; }
+        ));
+        back.waitAllFut_forUt();  // ready, not yet pumped
+    }
+    EXPECT_EQ(0, nBack.load()) << "REQ: dtor does not run a ready backFN";
+}
 
 }  // namespace

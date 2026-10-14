@@ -65,7 +65,10 @@ using Fut_BackFN_S = std::vector<Fut_BackFN>;  // vector + swap-erase: O(1) rm, 
 class ThreadBack
 {
 public:
-    virtual ~ThreadBack() noexcept = default;
+    // min for safety:
+    // - discard backFN(): avoid longer & more complex scenario
+    // - wait workers FOREVER: safe (& no choice)
+    virtual ~ThreadBack() noexcept;
 
     // @brief: Schedules an asynchronous task to be executed in a background thread.
     // @param MT_TaskEntryFN: The task to be executed asynchronously.
@@ -85,8 +88,9 @@ public:
 
 protected:
     // -------------------------------------------------------------------------------------------
-    // mt_nDoneFut_ MUST be before fut_backFN_S_ since destruct fut_backFN_S_ may use mt_nDoneFut_ (in AsyncBack)
+    // mt_nDoneFut_ BEFORE fut_backFN_S_: destruct fut_backFN_S_ may use mt_nDoneFut_ (in AsyncBack)
     // - otherwise, undefined behavior (but now no problem so can't UT to cover)
+    // - mt_nDoneFut_ is to speedup hdlDoneFut()
     std::atomic<size_t> mt_nDoneFut_ = 0;
     Fut_BackFN_S fut_backFN_S_;  // keep each future until its task is finished
     size_t  maxParallel_ = 0;  // can't rely on fut_backFN_S_.capacity() newTaskOK() can exceed it
@@ -111,6 +115,7 @@ public:
 // 2024-08-05  CSZ       - mt_nDoneFut_ to improve iteration of fut_backFN_S_
 //                       - MT_TaskEntryFN ret SafePtr<void> instead of bool
 // 2025-03-21  CSZ       2)enable exception: tolerate except is safer; can't recover except->terminate
+// 2026-10-13  CSZ       - enhance & unify dtor
 // ***********************************************************************************************
 // - why SafePtr
 //   . thread can ret any type data include bool
