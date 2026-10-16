@@ -17,7 +17,7 @@
 //   . func_d(..., UniLog  conLog)     // alt/copy, copy name must be "oneLog"
 //
 // - VALUE:
-//   * unified logging interface: INF/INF/WRN/ERR/HID
+//   * unified logging interface: INF/WRN/ERR/EMG/HID
 //   . min oneLog() to INF/etc in all scenarios: inner class & func, default global log
 //   . get-log-by-name to avoid para/UniLog travel (from creator, to mid ..., to end-usr)
 //

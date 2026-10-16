@@ -54,7 +54,7 @@ private:
     // -------------------------------------------------------------------------------------------
     std::vector<std::thread>  thPool_;
 
-    // entry, callback, result. No promise/future.
+    // simple: no need promise/future & related headache
     struct MT_ThTaskInfo_
     {
         MT_TaskEntryFN mt_entryFN_;
@@ -62,7 +62,7 @@ private:
         SafePtr<void> mt_ret_;
     };
     std::list<MT_ThTaskInfo_>  mt_taskQ_;
-    std::list<MT_ThTaskInfo_>  mt_doneQ_;  // done list, not a ready-counter: no count/ready race
+    std::list<MT_ThTaskInfo_>  mt_doneQ_;  // professional than counter(sync headache)
 
     std::mutex  mt_mutex_;
     std::condition_variable  mt_qCv_;

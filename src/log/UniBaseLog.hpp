@@ -67,7 +67,16 @@ namespace rlib { inline bool traceOn_ = (std::getenv("TRACE_OFF") == nullptr); }
 #define HID(content) {}
 #endif
 
-#define GTEST_LOG_FAIL { if (Test::HasFailure()) needLog(); }  // UT only
+// ***********************************************************************************************
+// EMG: log in emergency case, eg bad_alloc
+// - min: no alloc, no throw, no lock
+#define EMG(fmt, ...) ((void)std::fprintf(stderr, "EMG/%s():%d: " fmt "\n", \
+    __func__, __LINE__, ##__VA_ARGS__))
+
+// ***********************************************************************************************
+#ifdef IN_ALL_UT
+#define GTEST_LOG_FAIL { if (Test::HasFailure()) needLog(); }
+#endif
 
 namespace rlib
 {
@@ -177,4 +186,5 @@ constexpr char ULN_DEFAULT[] = "DEFAULT";
 // 2024-02-22  CSZ       2)mem-safe
 // 2025-04-07  CSZ       3)tolerate exception; MT safe
 // 2026-04-17  CSZ       4)TRC; perf opt other logs
+// 2026-10-16  CSZ       5)EMG
 // ***********************************************************************************************

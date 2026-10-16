@@ -4,7 +4,6 @@
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
-#include <cstdio>
 #include <utility>
 #include "ThPoolBack.hpp"
 
@@ -66,7 +65,7 @@ void ThPoolBack::mt_threadMain_() noexcept
         auto& task = mine.front();
         try { task.mt_ret_ = task.mt_entryFN_(); }
         catch (...) {
-            std::fprintf(stderr, "ERR(ThPoolBack) entryFN() except=%s\n", mt_exceptInfo());
+            EMG("(ThPoolBack) entryFN() except=%s", mt_exceptInfo());
         }
         task.mt_entryFN_ = nullptr;  // drop captures before main can run backFN_
 

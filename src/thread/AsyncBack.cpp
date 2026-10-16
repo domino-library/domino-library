@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 #include <chrono>
-#include <cstdio>
 #include <utility>
 #include "AsyncBack.hpp"
 
@@ -107,7 +106,7 @@ SafePtr<void> AsyncBack::mt_thMain_(MT_TaskEntryFN mt_aEntryFN, std::atomic<size
     SafePtr ret;
     try { ret = mt_aEntryFN(); }
     catch(...) {
-        std::fprintf(stderr, "ERR(AsyncBack) entryFN() except=%s\n", mt_exceptInfo());
+        EMG("(AsyncBack) entryFN() except=%s", mt_exceptInfo());
     }
     mt_aEntryFN = nullptr;  // early release captured function
 

@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 #include <atomic>
-#include <cstdio>
 
 #include "MT_PingMainTH.hpp"
 #include "UniLog.hpp"
@@ -35,8 +34,8 @@ bool mt_reqMainTH(const char* aFn) noexcept
     if (mt_getMainTH() == std::this_thread::get_id())  // fast path: normal case
         return true;
 
-    // fprintf for rare: safe & min notification to usr
-    std::fprintf(stderr, "ERR(MainTH) !!! %s() must in main-thread\n", aFn ? aFn : "?");
+    // EMG for rare: safe & min notification to usr
+    EMG("(MT_PingMainTH) !!! %s() must in main-thread", aFn ? aFn : "?");
     return false;
 }
 }  // namespace

@@ -99,8 +99,8 @@ void HdlrDomino<aDominoType>::cb_hdlr_(Domino::Event aValidEv, const WeakMsgCB& 
 {
     if (auto cb = aWeakCB.lock()) {  // cb avilable
         try { (*(cb.get()))(); }  // setHdlr() forbid cb==null
-        catch(...) {  // fprintf: no throw (safe), min print (helpful) w/o extra obj/action/etc (safe)
-            std::fprintf(stderr, "ERR(HdlrDom) hdlr() except=%s, ev=%zu\n", mt_exceptInfo(), aValidEv);
+        catch(...) {
+            EMG("(HdlrDomino) hdlr() except=%s, ev=%zu", mt_exceptInfo(), aValidEv);
         }
     }
 }
@@ -293,4 +293,5 @@ void HdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Domino
 // 2025-02-13  CSZ       - support both SafePtr & shared_ptr
 // 2025-04-05  CSZ       3)tolerate exception
 // 2026-10-02  CSZ       - cb_hdlr_: enhance safety
+// 2026-10-16  CSZ       - EMG in rare err
 // ***********************************************************************************************
