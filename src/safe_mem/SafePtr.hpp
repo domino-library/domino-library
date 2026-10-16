@@ -33,6 +33,7 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -220,7 +221,8 @@ std::shared_ptr<T> SafePtr<T>::operator->() const noexcept
 {
     if (!pT_)
     {
-        HID("(SafePtr ERR!) operator-> on null");  // only HID is MT safe
+        // fprintf: HID is off in release, so abort() would say nothing
+        std::fprintf(stderr, "ERR(SafePtr) operator-> on null\n");  // GCOVR_EXCL_LINE
         std::abort();  // safer: no dirty mem; easier debug: here rather than later; simpler than terminate()
     }
     return pT_;
@@ -245,8 +247,8 @@ template<typename U, typename... ConstructArgs>
     try {  // bad_alloc, or except from U's constructor
         safeU.pT_ = std::make_shared<U>(std::forward<ConstructArgs>(aArgs)...);  // std::make_shared, not boost's
         // HID("new ptr=" << (void*)(safeU.pT_.get()));  // too many print; void* print addr rather than content(dangerous)
-    } catch(...) {
-        HID("(make_safe) except=" << mt_exceptInfo());  // only HID is MT safe
+    } catch(...) {  // bad_alloc, or T's constructor; fprintf, then return nullptr
+        std::fprintf(stderr, "ERR(SafePtr) make_safe except=%s\n", mt_exceptInfo());
     }
     return safeU;
 }
@@ -257,8 +259,8 @@ template<typename U, typename... ConstructArgs>
     try {  // bad_alloc, or except from U's constructor
         // shared_ptr(Y*) ctor: if ctrl-blk alloc throws, Y* is deleted (std guarantee, no leak)
         safeU.pT_ = std::shared_ptr<U>(new U(std::forward<ConstructArgs>(aArgs)...));
-    } catch(...) {
-        HID("(new_safe) except=" << mt_exceptInfo());  // only HID is MT safe
+    } catch(...) {  // bad_alloc, or T's constructor; fprintf, then return nullptr
+        std::fprintf(stderr, "ERR(SafePtr) new_safe except=%s\n", mt_exceptInfo());
     }
     return safeU;
 }
@@ -393,6 +395,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 // 2026-04-27  CSZ       - SafeWeak: default ctor + owner_before/owner_less (usable as map key)
 // 2026-04-28  CSZ       - drop redundant SafePtr→SafeWeak conversion op (SafeWeak ctor covers all)
 // 2026-06-08  CSZ       - perf: ==/!=/< & hash compare raw-ptr identity (no refcount churn on map keys)
+// 2026-10-14  CSZ       7)fprintf instead of HID in rare err
 // ***********************************************************************************************
 // - Q&A
 //   * noexcept & constexpr (for whole lib)

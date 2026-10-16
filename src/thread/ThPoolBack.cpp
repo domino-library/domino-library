@@ -4,7 +4,7 @@
  * Licensed under the BSD 3 Clause license
  * SPDX-License-Identifier: BSD-3-Clause
  */
-#include <new>
+#include <cstdio>
 #include <utility>
 #include "ThPoolBack.hpp"
 
@@ -30,8 +30,7 @@ ThPoolBack::ThPoolBack(size_t aMaxThread, size_t aMaxTaskQ)
 
         // create threads
         thPool_.reserve(aMaxThread);  // not construct any thread
-        fut_backFN_S_.reserve(aMaxTaskQ);  // safe for limitNewTaskOK; better perf for most cases
-        maxParallel_ = aMaxTaskQ;  // construct-time limit for limitNewTaskOK
+        maxInFlight_ = aMaxTaskQ;  // construct-time limit for limitNewTaskOK
         for (size_t i = 0; i < aMaxThread; ++i)
             thPool_.emplace_back(&ThPoolBack::mt_threadMain_, this);
     } catch(...) {  // ut can't cover this branch; rare but safer
@@ -46,7 +45,7 @@ void ThPoolBack::mt_threadMain_() noexcept
 {
     for (;;)
     {
-        MtTask_ job;
+        list<MT_ThTaskInfo_> mine;
         {
             // - lock to prevent new task/notif until my mt_qCv_ sleep/wait-notif (ensure not loss notif)
             // - lock to prevent other thread steal task
@@ -58,20 +57,23 @@ void ThPoolBack::mt_threadMain_() noexcept
                 return;
             // mt_qCv_.wait(): lock then check predicate, so no need check mt_taskQ_.empty() here
 
-            job = move(mt_taskQ_.front());
-            mt_taskQ_.pop_front();
+            // splice(): no alloc & except - safer & simpler
+            mine.splice(mine.end(), mt_taskQ_, mt_taskQ_.begin());  // mv 1st task to mine
         }
 
-        // exception stays on this thread. set_exception let ~promise free it
-        // after main's catch read e.what(); libsupc++'s refcount is invisible to tsan
-        SafePtr<void> ret;
-        try { ret = job.entry(); }
-        catch (...) { HID("(ThPoolBack) entryFN() except=" << mt_exceptInfo()); }  // same as AsyncBack
-        // Drop captures before the future is ready: main may run backFN as soon as it is.
-        job.entry = nullptr;
+        // exception stays on this thread (same as AsyncBack). backFN sees a null ret.
+        // ~backFN runs later, when the main thread drops the node.
+        auto& task = mine.front();
+        try { task.mt_ret_ = task.mt_entryFN_(); }
+        catch (...) {
+            std::fprintf(stderr, "ERR(ThPoolBack) entryFN() except=%s\n", mt_exceptInfo());
+        }
+        task.mt_entryFN_ = nullptr;  // drop captures before main can run backFN_
 
-        mt_nDoneFut_.fetch_add(1, std::memory_order_release);  // before ready: hdlDoneFut may take it on an older count
-        job.prom.set_value(move(ret));
+        {
+            lock_guard lock(mt_mutex_);
+            mt_doneQ_.splice(mt_doneQ_.end(), mine);  // no alloc & except - safer & simpler
+        }
         mt_pingMainTH();  // always ping, or may wait long under low load
     }
 }
@@ -95,43 +97,64 @@ void ThPoolBack::clean_() noexcept
     for (auto&& th : thPool_)
         if (th.joinable())
             th.join();  // safer: avoid terminate when destruct th
-    // backFN is discarded by ~ThreadBack. hdlDoneFut() here lets backFN call newTaskOK on a dying pool
+    // Joined: each worker has already spliced its node into mt_doneQ_. Do not run backFN (it may newTaskOK()).
+    if (nInFlight_ != 0)
+        WRN("(ThPoolBack) discard nFut=" << nInFlight_);
+    mt_taskQ_.clear();
+    mt_doneQ_.clear();
+    nInFlight_ = 0;
+}
+
+// ***********************************************************************************************
+size_t ThPoolBack::hdlDoneFut(UniLog& oneLog) noexcept
+{
+    if (! mt_reqMainTH(__func__))
+        return 0;
+
+    // Snapshot: a backFN that submits more work must not keep this call draining forever.
+    // list's default ctor does not allocate, and swap does not throw.
+    list<MT_ThTaskInfo_> done;
+    {
+        lock_guard lock(mt_mutex_);
+        done.swap(mt_doneQ_);
+    }
+
+    size_t nHandled = 0;
+    while (! done.empty())
+    {
+        auto& task = done.front();
+        --nInFlight_;  // before backFN, so limitNewTaskOK sees the freed slot
+        try { task.backFN_(move(task.mt_ret_)); }
+        catch (...) { ERR("(ThPoolBack) backFN() except=" << mt_exceptInfo()); }
+        done.pop_front();  // ~backFN on this (main) thread
+        ++nHandled;
+    }
+    return nHandled;
 }
 
 // ***********************************************************************************************
 bool ThPoolBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLog& oneLog) noexcept
 {
     try {
-        if (! ThreadBack::newTaskOK(mt_aEntryFN, aBackFN, oneLog))
+        if (! newTaskArgOK_(mt_aEntryFN, aBackFN, oneLog))
             return false;
 
-        MtTask_ job{std::move(mt_aEntryFN), {}};
-        // The future is recorded before the job is queued. The other order can throw after
-        // the job is queued: the task then runs with no backFN, and mt_nDoneFut_ stays one ahead.
-        // If this queue push throws, drop the future. ~promise would otherwise ready it with
-        // broken_promise; the next completion would run this backFN and spend that count.
-        fut_backFN_S_.push_back(Fut_BackFN{job.prom.get_future(), std::move(aBackFN)});
-        try {
+        // Only allocation for this task. If it throws, ~MT_ThTaskInfo_ runs on this thread.
+        // splice into the shared list does not allocate.
+        list<MT_ThTaskInfo_> one;
+        one.push_back(MT_ThTaskInfo_{std::move(mt_aEntryFN), std::move(aBackFN), {}});  // GCOVR_EXCL_BR_LINE bad_alloc only
+        {
             lock_guard lock(mt_mutex_);
-#ifdef IN_ALL_UT
-            if (failNextQueuePush_forUt) {
-                failNextQueuePush_forUt = false;
-                throw std::bad_alloc();
-            }
-#endif
-            mt_taskQ_.push_back(move(job));
-        } catch (...) {
-            fut_backFN_S_.pop_back();
-            throw;
+            mt_taskQ_.splice(mt_taskQ_.end(), one);
+            ++nInFlight_;
         }
         mt_qCv_.notify_one();  // notify thread pool to run a new task
 
         return true;
-    } catch(...) {
-        // false, and no task kept. A future already pushed is dropped above.
-        // A throw before that (vector growth, mutex) recorded nothing.
+    } catch(...) {  // ut can't cover: push_back throws only on bad_alloc
+        // node was not queued; ~backFN already ran on this thread
         ERR("(ThPoolBack) except=" << mt_exceptInfo() << " in newTaskOK");
-        return false;
+        return false;  // GCOVR_EXCL_LINE
     }
 }
 

@@ -10,8 +10,7 @@
 //   . avoid create/destroy thread, 10~100 faster than AsyncBack
 //   . code more complex than AsyncBack
 //
-// - Use-safe: yes with condition:
-//   . not support TOO many tasks that exceeds fut_backFN_S_/mt_nDoneFut_/.. (impossible in most/normal cases)
+// - Use-safe: yes
 // - MT safe:
 //   . MT_/mt_ prefix: yes
 //   . others: no (must call in main thread)
@@ -20,9 +19,9 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <future>
+#include <list>
 #include <mutex>
-#include <deque>
+#include <thread>
 #include <vector>
 
 #include "ThreadBack.hpp"
@@ -45,22 +44,29 @@ public:
     ThPoolBack& operator=(ThPoolBack&&) = delete;
 
     [[nodiscard]] bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
+    [[nodiscard]] size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept override;
+    [[nodiscard]] size_t nFut() const noexcept override { return nInFlight_; }
 
 private:
     void mt_threadMain_() noexcept;  // runs in each pool thread
     void clean_() noexcept;
+
     // -------------------------------------------------------------------------------------------
     std::vector<std::thread>  thPool_;
 
-    struct MtTask_
+    // entry, callback, result. No promise/future.
+    struct MT_ThTaskInfo_
     {
-        MT_TaskEntryFN entry;
-        std::promise<SafePtr<void>> prom;
+        MT_TaskEntryFN mt_entryFN_;
+        TaskBackFN backFN_;
+        SafePtr<void> mt_ret_;
     };
-    std::deque<MtTask_>  mt_taskQ_;
+    std::list<MT_ThTaskInfo_>  mt_taskQ_;
+    std::list<MT_ThTaskInfo_>  mt_doneQ_;  // done list, not a ready-counter: no count/ready race
+
     std::mutex  mt_mutex_;
     std::condition_variable  mt_qCv_;
-
+    size_t  nInFlight_ = 0;  // main thread only: accepted, backFN not yet run
     std::atomic<bool>  mt_stopAllTH_ = false;
 
     // -------------------------------------------------------------------------------------------
@@ -70,7 +76,20 @@ private:
 #ifdef IN_ALL_UT
 public:
     bool mt_stopping_forUt() const noexcept { return mt_stopAllTH_.load(); }
-    static inline bool failNextQueuePush_forUt = false;  // next newTaskOK throws before the queue takes the job
+    // Main thread, outside hdlDoneFut. From a backFN only when that call holds no other
+    // snapshot task: those still count in nInFlight_ but are not in mt_doneQ_, so this never returns.
+    void waitAllFut_forUt()
+    {
+        for (;;)
+        {
+            {
+                std::lock_guard lock(mt_mutex_);
+                if (mt_doneQ_.size() == nInFlight_)
+                    return;
+            }
+            timedwait();
+        }
+    }
 #endif
 };
 
@@ -84,4 +103,5 @@ public:
 // 2026-10-02  CSZ       - count +1 before the future is ready
 //                       - entryFN except stays on the worker (tsan)
 // 2026-10-13  CSZ       - enhance & unify dtor
+// 2026-10-14  CSZ       - std::list + splice; node allocated on submit
 // ***********************************************************************************************

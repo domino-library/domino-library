@@ -6,7 +6,7 @@
  */
 // ***********************************************************************************************
 // - Why this class:
-//   . support both async() & thread pool
+//   * common interface so can replace diff solutions eg AsyncBack or ThPoolBack
 //   . common here, special in AsyncBack or ThPoolBack
 //
 // - Scenario (ThPoolBack + AsyncBack cover 92%):
@@ -37,11 +37,7 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <atomic>
 #include <functional>
-#include <future>
-#include <utility>
-#include <vector>
 
 #include "MT_PingMainTH.hpp"
 #include "SafePtr.hpp"
@@ -55,12 +51,6 @@ namespace rlib
 using MT_TaskEntryFN  = std::function<SafePtr<void>()>;  // ret-nullptr means failure
 using TaskBackFN      = std::function<void(SafePtr<void>)>;  // MT_TaskEntryFN's ret as para
 
-struct Fut_BackFN {
-    std::future<SafePtr<void>> future;
-    TaskBackFN backFN;
-};
-using Fut_BackFN_S = std::vector<Fut_BackFN>;  // vector + swap-erase: O(1) rm, better cache
-
 // ***********************************************************************************************
 class ThreadBack
 {
@@ -68,7 +58,7 @@ public:
     // min for safety:
     // - discard backFN(): avoid longer & more complex scenario
     // - wait workers FOREVER: safe (& no choice)
-    virtual ~ThreadBack() noexcept;
+    virtual ~ThreadBack() noexcept = default;
 
     // @brief: Schedules an asynchronous task to be executed in a background thread.
     // @param MT_TaskEntryFN: The task to be executed asynchronously.
@@ -76,35 +66,24 @@ public:
     // @param UniLog        : The logger to use for this operation.
     [[nodiscard]] virtual bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept = 0;
 
-    // @brief: like newTaskOK but reject if nFut() >= maxParallel_ (for users who want to limit max#)
+    // @brief: like newTaskOK but reject if nFut() >= maxInFlight_ (for users who want to limit max#)
     [[nodiscard]] bool limitNewTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept;
 
-    // @brief: Processes completed threads and invokes their callbacks.
+    // @brief: Processes completed tasks and invokes their callbacks on the main thread.
     // @param UniLog: The logger to use for this operation.
     // @return: The number of completed tasks processed.
-    [[nodiscard]] size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept;
+    [[nodiscard]] virtual size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept = 0;
 
-    [[nodiscard]] auto nFut() const noexcept { return fut_backFN_S_.size(); }
+    [[nodiscard]] virtual size_t nFut() const noexcept = 0;
 
 protected:
     // -------------------------------------------------------------------------------------------
-    // mt_nDoneFut_ BEFORE fut_backFN_S_: destruct fut_backFN_S_ may use mt_nDoneFut_ (in AsyncBack)
-    // - otherwise, undefined behavior (but now no problem so can't UT to cover)
-    // - mt_nDoneFut_ is to speedup hdlDoneFut()
-    std::atomic<size_t> mt_nDoneFut_ = 0;
-    Fut_BackFN_S fut_backFN_S_;  // keep each future until its task is finished
-    size_t  maxParallel_ = 0;  // can't rely on fut_backFN_S_.capacity() newTaskOK() can exceed it
+    [[nodiscard]] bool newTaskArgOK_(const MT_TaskEntryFN&, const TaskBackFN&, UniLog&) noexcept;
 
-    // -------------------------------------------------------------------------------------------
-#ifdef IN_ALL_UT
-public:
-    auto& mt_nDoneFut() { return mt_nDoneFut_; }
-    void waitAllFut_forUt()
-    {
-        for (auto& fut_backFN : fut_backFN_S_)
-            fut_backFN.future.wait();
-    }
-#endif
+    // limitNewTaskOK cap on outstanding tasks (nFut). Not a thread count:
+    // AsyncBack: max async tasks. ThPoolBack: max task-queue depth.
+    // newTaskOK itself may exceed it.
+    size_t  maxInFlight_ = 0;
 };
 
 }  // namespace
@@ -116,6 +95,7 @@ public:
 //                       - MT_TaskEntryFN ret SafePtr<void> instead of bool
 // 2025-03-21  CSZ       2)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-10-13  CSZ       - enhance & unify dtor
+// 2026-10-14  CSZ       3)refactor since professional ThPoolBack
 // ***********************************************************************************************
 // - why SafePtr
 //   . thread can ret any type data include bool

@@ -29,15 +29,16 @@ using namespace testing;
 namespace rlib
 {
 // ***********************************************************************************************
-// - construct a ThreadBack with maxParallel=2 (must be a template so if-constexpr discards the
+// - construct with maxInFlight=2 (must be a template so if-constexpr discards the
 //   wrong-type branch; macro-expanded fixtures are non-template, where both branches must compile)
+//   AsyncBack: max async tasks. ThPoolBack: 1 thread, maxTaskQ=2.
 template<class T>
-std::unique_ptr<T> mkBack_maxParallel2()
+std::unique_ptr<T> mkBack_maxInFlight2()
 {
     if constexpr (std::is_same_v<T, ThPoolBack>)
-        return std::make_unique<T>(1, 2);  // 1 thread, maxTaskQ=2
+        return std::make_unique<T>(1, 2);
     else
-        return std::make_unique<T>(2);     // max=2
+        return std::make_unique<T>(2);
 }
 
 // ***********************************************************************************************
@@ -69,7 +70,6 @@ struct THREAD_BACK_TEST : public UtInitObjAnywhere
     void cleanup_() override
     {
         drainDoneFut(threadBack_);
-        threadBack_.mt_nDoneFut() = 0;  // bugFix case may leave a stale counter
         EXPECT_EQ(0, threadBack_.nFut()) << "REQ: handle all";
         mt_getQ().clearAll();
     }
@@ -80,6 +80,8 @@ struct THREAD_BACK_TEST : public UtInitObjAnywhere
 
 #define THREAD_AND_BACK
 // ***********************************************************************************************
+// Shared contract. AsyncBack ships the result in a future (picture). ThPoolBack posts it to a
+// done list; hdlDoneFut is virtual and drains that list. backFN still runs on the main thread.
 //                                  [main thread]
 //                                       |
 //                                       | std::async()    [new thread]
@@ -217,12 +219,11 @@ TEST_F(THREAD_BACK_TEST, GOLD_except_entryFN_backFN)
             throw std::runtime_error("backFN() exception");
         }
     ));
-    while (threadBack_.hdlDoneFut() < 1) {  // REQ: counter++ after entryFN() except
+    while (threadBack_.hdlDoneFut() < 1) {  // REQ: completion is posted even when entryFN throws
         timedwait();
     }
     EXPECT_EQ(2, step.load()) << "REQ: backFN() executed";
-    EXPECT_EQ(0, threadBack_.nFut()) << "REQ: task removed from fut_backFN_S_ after exceptions";
-    EXPECT_EQ(0, threadBack_.mt_nDoneFut().load()) << "REQ: ok after backFN() except";
+    EXPECT_EQ(0, threadBack_.nFut()) << "REQ: task removed after exceptions";
 }
 TEST_F(THREAD_BACK_TEST, emptyThreadList_ok)
 {
@@ -302,30 +303,6 @@ TEST_F(THREAD_BACK_TEST, viaMsgSelf_invalidPri_newMsgOK_fails_noCrash)
 
     EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: invalid pri not queued; no crash";
 }
-TEST_F(THREAD_BACK_TEST, bugFix_nDoneFut_before_futureReady)
-{
-    std::atomic<bool> canEnd(false);
-    EXPECT_TRUE(threadBack_.newTaskOK(
-        // MT_TaskEntryFN
-        [&canEnd]()
-        {
-            while (not canEnd)
-                std::this_thread::yield();  // not end until instruction
-            return make_safe<bool>(true);
-        },
-        // TaskBackFN
-        [](SafePtr<void>) {}
-    )) << "REQ: newTaskOK";
-
-    threadBack_.mt_nDoneFut()++;  // force +1 before future ready
-    EXPECT_EQ(0u, threadBack_.hdlDoneFut()) << "REQ: no crash, nothing ready";
-
-    canEnd = true;
-    threadBack_.waitAllFut_forUt();
-    EXPECT_EQ(2u, threadBack_.mt_nDoneFut().load()) << "REQ: +1 visible once future ready";
-    EXPECT_EQ(1u, threadBack_.hdlDoneFut());
-}
-
 // - REQ: mt_getMainTH() returns the process's ONE logical main = the 1st caller; a later call from
 //        ANY other thread still returns that SAME main id (the worker does NOT become main).
 TEST_F(THREAD_BACK_TEST, getMainTH_1stCallerWins_otherThread_stillGetsSameMainId)
@@ -485,16 +462,16 @@ TEST_F(THREAD_BACK_TEST, maxThread_exceed_default)
 }
 TEST_F(THREAD_BACK_TEST, limitMax_stays_at_constructMax_evenAfter_nonLimit_grow)
 {
-    // construct with maxParallel=2 (AsyncBack: max async#; ThPoolBack: maxTaskQ)
-    auto back = mkBack_maxParallel2<THREAD_BACK_TYPE>();
+    // construct with maxInFlight=2 (AsyncBack: max async tasks; ThPoolBack: maxTaskQ)
+    auto back = mkBack_maxInFlight2<THREAD_BACK_TYPE>();
 
-    // grow fut_backFN_S_ beyond reserve(2) via non-limit newTaskOK -> vector reallocates
+    // non-limit newTaskOK may pass the construct max; limitNewTaskOK must still use that max
     for (int i = 0; i < 3; ++i)
         EXPECT_TRUE(back->newTaskOK(
             [] { return make_safe<bool>(true); },
             [](SafePtr<void>) {}
         )) << "REQ: non-limit newTaskOK allows exceeding max";
-    EXPECT_EQ(3u, back->nFut()) << "REQ: 3 saved, capacity reallocated past reserve(2)";
+    EXPECT_EQ(3u, back->nFut()) << "REQ: 3 saved, past construct max";
 
     // REQ: limit must still honor construct max=2, NOT the grown vector capacity
     EXPECT_FALSE(back->limitNewTaskOK(
@@ -516,6 +493,75 @@ TEST_F(THREAD_BACK_TEST, dtor_discards_ready_backFN)
         back.waitAllFut_forUt();  // ready, not yet pumped
     }
     EXPECT_EQ(0, nBack.load()) << "REQ: dtor does not run a ready backFN";
+}
+// backFN may submit. That completion can land before backFN returns, and this call must not run it.
+// AsyncBack caps the call at the done-count it loaded on entry. ThPoolBack drains a swapped snapshot.
+// waitAllFut_forUt from this backFN is safe only because the snapshot holds this one task:
+// its slot is already freed, so nFut() is 0 before the nested submit and 1 after.
+TEST_F(THREAD_BACK_TEST, hdlDoneFut_doesNotDrain_taskSubmittedByBackFN)
+{
+    std::atomic<int> nested{0};
+    EXPECT_TRUE(threadBack_.newTaskOK(
+        [] { return make_safe<bool>(true); },
+        [&](SafePtr<void>)
+        {
+            if (threadBack_.nFut() != 0)
+            {
+                ADD_FAILURE() << "precond: snapshot holds only this task";
+                return;  // else ThPoolBack::waitAllFut_forUt deadlocks
+            }
+            EXPECT_TRUE(threadBack_.newTaskOK(
+                [] { return make_safe<int>(7); },
+                [&](SafePtr<void> aRet) { nested = *(safe_cast<int>(aRet).get()); }
+            )) << "REQ: backFN may submit";
+            if (threadBack_.nFut() != 1)
+            {
+                ADD_FAILURE() << "precond: only the nested task is in flight";
+                return;
+            }
+            threadBack_.waitAllFut_forUt();  // nested entry has published; its backFN has not run
+            EXPECT_EQ(0, nested.load()) << "REQ: nested backFN stays out of this hdlDoneFut";
+        }
+    )) << "REQ: newTaskOK";
+
+    size_t nHandled = 0;
+    while ((nHandled = threadBack_.hdlDoneFut()) == 0)
+        timedwait();
+    EXPECT_EQ(1u, nHandled) << "REQ: this call handles only the task it already had";
+    EXPECT_EQ(0, nested.load());
+    EXPECT_EQ(1u, threadBack_.nFut()) << "REQ: nested task still in flight";
+
+    while ((nHandled = threadBack_.hdlDoneFut()) == 0)
+        timedwait();
+    EXPECT_EQ(1u, nHandled);
+    EXPECT_EQ(7, nested.load()) << "REQ: the next call runs the nested backFN";
+}
+// Slot is freed before backFN. At the construct max, limitNewTaskOK from the callback still accepts.
+TEST_F(THREAD_BACK_TEST, limitNewTaskOK_fromBackFN_seesFreedSlot)
+{
+    auto back = mkBack_maxInFlight2<THREAD_BACK_TYPE>();
+    std::atomic<int> nAccepted{0};
+    std::atomic<int> nNestedRan{0};
+    for (int i = 0; i < 2; ++i)
+    {
+        EXPECT_TRUE(back->limitNewTaskOK(
+            [] { return make_safe<bool>(true); },
+            [&](SafePtr<void>)
+            {
+                if (back->limitNewTaskOK(
+                    [&] { nNestedRan += 1; return make_safe<bool>(true); },
+                    [](SafePtr<void>) {}
+                ))
+                    nAccepted += 1;
+            }
+        )) << "REQ: fill to construct max";
+    }
+    back->waitAllFut_forUt();
+    EXPECT_EQ(2u, back->hdlDoneFut()) << "REQ: both fillers are handled, nested tasks are not";
+    EXPECT_EQ(2, nAccepted.load()) << "REQ: each backFN saw its slot already freed";
+    EXPECT_EQ(2u, back->nFut()) << "REQ: the two accepted tasks are still in flight";
+    drainDoneFut(*back);
+    EXPECT_EQ(2, nNestedRan.load()) << "REQ: accepted tasks ran";
 }
 
 }  // namespace

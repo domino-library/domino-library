@@ -36,7 +36,7 @@ std::thread::id mt_getMainTH() noexcept;
 //   . near-zero cost
 //     . shall be in cold path, NEVER in hot path
 //     . min check points to cover major code (than cover nothing)
-//     . on violation: report ONCE via a MT-safe path (never spam, never abort a release process)
+//     . on violation: fprintf(stderr); no throw, never abort
 //   . ret: true if in main-thread; false so caller MUST early-return in release
 // - usage: if (!mt_reqMainTH(__func__)) return;
 [[nodiscard]] bool mt_reqMainTH(const char* aFn) noexcept;
@@ -65,4 +65,5 @@ inline void timedwait(const size_t aSec = 0, const size_t aRestNsec = 100'000'00
 // YYYY-MM-DD  Who       v)Modification Description
 // ..........  .........   .......................................................................
 // 2023-10-25  CSZ       1)create
+// 2026-10-14  CSZ       2)fprintf in rare err
 // ***********************************************************************************************

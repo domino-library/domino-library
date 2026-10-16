@@ -59,4 +59,30 @@ TEST_F(AsyncBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
     EXPECT_FALSE(rejectedRan.load()) << "REQ: rejected task never runs";
 }
 
+// ThPoolBack has no ready-count: a completion is either on the done list or not.
+// This race exists only on the future path (count +1 before future::ready).
+TEST_F(AsyncBackTest, bugFix_nDoneFut_before_futureReady)
+{
+    std::atomic<bool> canEnd(false);
+    EXPECT_TRUE(threadBack_.newTaskOK(
+        [&canEnd]()
+        {
+            while (not canEnd)
+                std::this_thread::yield();
+            return make_safe<bool>(true);
+        },
+        [](SafePtr<void>) {}
+    )) << "REQ: newTaskOK";
+
+    threadBack_.mt_nDoneFut()++;  // force +1 before future ready
+    EXPECT_EQ(0u, threadBack_.hdlDoneFut()) << "REQ: no crash, nothing ready";
+
+    canEnd = true;
+    threadBack_.waitAllFut_forUt();
+    EXPECT_EQ(2u, threadBack_.mt_nDoneFut().load()) << "REQ: +1 visible once future ready";
+    EXPECT_EQ(1u, threadBack_.hdlDoneFut());
+    threadBack_.mt_nDoneFut()--;  // undo the forced +1; leave the real count at 0
+    EXPECT_EQ(0u, threadBack_.mt_nDoneFut().load());
+}
+
 }  // namespace

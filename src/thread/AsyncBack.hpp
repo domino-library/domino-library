@@ -48,22 +48,49 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <atomic>
+#include <future>
+#include <vector>
+
 #include "ThreadBack.hpp"
 
 namespace rlib
 {
+// ***********************************************************************************************
+struct MT_AsyncTaskInfo {
+    TaskBackFN backFN_;  // before mt_future_: ~mt_future_ joins, then ~backFN_
+    std::future<SafePtr<void>> mt_future_;
+};
+
 // ***********************************************************************************************
 class AsyncBack : public ThreadBack
 {
 public:
     // @param aMaxAsync: max threads; 0 -> MAX_ASYNC (warning)
     explicit AsyncBack(size_t aMaxAsync = MAX_ASYNC) noexcept(false);
+    ~AsyncBack() noexcept;
 
     [[nodiscard]] bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
+    [[nodiscard]] size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept override;
+    [[nodiscard]] size_t nFut() const noexcept override { return fut_backFN_S_.size(); }
 
 private:
     static SafePtr<void> mt_thMain_(MT_TaskEntryFN, std::atomic<size_t>&) noexcept;  // runs in new thread
     static constexpr size_t  MAX_ASYNC = 100;  // rational default; stack costs 100*8M=800M
+
+    // mt_nDoneFut_ BEFORE fut_backFN_S_: ~future joins the worker, which may still touch the count
+    std::atomic<size_t> mt_nDoneFut_ = 0;
+    std::vector<MT_AsyncTaskInfo> fut_backFN_S_;  // keep each future until its task is finished
+
+#ifdef IN_ALL_UT
+public:
+    auto& mt_nDoneFut() { return mt_nDoneFut_; }
+    void waitAllFut_forUt()
+    {
+        for (auto& fut_backFN : fut_backFN_S_)
+            fut_backFN.mt_future_.wait();
+    }
+#endif
 };
 
 }  // namespace
@@ -82,6 +109,7 @@ private:
 // 2025-03-21  CSZ       3)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-04-09  CSZ       - can limit max async
 // 2026-10-13  CSZ       - enhance & unify dtor
+// 2026-10-14  CSZ       - futures and hdlDoneFut live here, not in ThreadBack
 // ***********************************************************************************************
 // - Q&A:
 //   . MT_/mt_ prefix

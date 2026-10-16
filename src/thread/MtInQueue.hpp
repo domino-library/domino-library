@@ -25,6 +25,7 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -111,7 +112,7 @@ bool MtInQueue::mt_pushOK(S_PTR<aEleType>&& aEle) noexcept
         // HID("(MtQ) nRef=" << aEle.use_count() << ", ptr=" << aEle.get());  // HID supports MT
         mt_queue_.emplace_back(std::move(aEle), typeid(aEleType));  // ELE_TID: Element+TypeId
     } catch(...) {  // ut can't cover this branch; rare but safer
-        HID("!!! MtQ except in mt_pushOK");  // HID supports MT (ERR/WRN don't)
+        std::fprintf(stderr, "ERR(MtQ) except=%s in mt_pushOK\n", mt_exceptInfo());  // GCOVR_EXCL_LINE
         return false;
     }
 
@@ -192,4 +193,5 @@ MtInQueue& mt_getQ() noexcept;
 // 2024-10-05  CSZ       - integrate with domino (giveup since multi-same-type)
 // 2025-03-24  CSZ       4)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-04-08  CSZ       - safe to limit max queue
+// 2026-10-14  CSZ       - fprintf in rare err
 // ***********************************************************************************************

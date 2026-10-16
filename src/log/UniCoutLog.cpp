@@ -22,9 +22,17 @@ namespace
 std::FILE* openTrcFile_() noexcept
 {
     const int fd = ::dup(STDOUT_FILENO);
-    if (fd < 0) return nullptr;  // GCOVR_EXCL_BR_LINE dup fails only when the fd table is full
+    if (fd < 0)  // GCOVR_EXCL_BR_LINE dup fails only when the fd table is full
+    {
+        std::fprintf(stderr, "ERR(UniCoutLog) TRC dup(stdout) failed\n");  // GCOVR_EXCL_LINE
+        return nullptr;  // GCOVR_EXCL_LINE
+    }
     std::FILE* fp = ::fdopen(fd, "a");
-    if (fp == nullptr) ::close(fd);  // GCOVR_EXCL_BR_LINE fdopen fails only after dup, same exhaustion
+    if (fp == nullptr)  // GCOVR_EXCL_BR_LINE fdopen fails only after dup, same exhaustion
+    {
+        std::fprintf(stderr, "ERR(UniCoutLog) TRC fdopen failed\n");  // GCOVR_EXCL_LINE
+        ::close(fd);  // GCOVR_EXCL_LINE
+    }
     return fp;
 }
 
@@ -88,7 +96,7 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
         {
             if (! redirectTrcOK_(nullptr))  // GCOVR_EXCL_BR_LINE same fd-table failure as redirectTrcOK_
             {
-                cout << "ERR(UniCoutLog): can't restore TRC to stdout" << endl;  // GCOVR_EXCL_LINE GCOVR_EXCL_BR_LINE
+                std::fprintf(stderr, "ERR(UniCoutLog) can't restore TRC to stdout\n");  // GCOVR_EXCL_LINE
                 return false;  // GCOVR_EXCL_LINE
             }
             cout << "INF(UniCoutLog): switch to cout" << endl;
@@ -110,7 +118,8 @@ bool UniCoutLog::setLogFileOK(const string& aFileName) noexcept
         return true;
     } catch (...)
     {
-        cout << "ERR(UniCoutLog): except=" << mt_exceptInfo() << " when open log file=" << aFileName << endl;
+        std::fprintf(stderr, "ERR(UniCoutLog) except=%s when open log file=%s\n",
+            mt_exceptInfo(), aFileName.c_str());
         return false;
     }
 }
