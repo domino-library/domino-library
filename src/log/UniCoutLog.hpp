@@ -8,8 +8,8 @@
 // - ISSUE/why:
 //   . MT safe log:
 //     . UniSmartLog is NOT; UniCoutLog is YES & simplest
-//     . INF/WRN/ERR/HID: MT safe
-//     . TRC: highest perf; MT safe
+//     . INF/WRN/ERR/HID/TRC/EMG: MT safe
+//     . TRC: highest perf
 //   . encapsulate cout/file for eg:
 //     . UT
 //     . simplest log for debug
