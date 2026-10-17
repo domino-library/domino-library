@@ -29,7 +29,8 @@ if(ci  STREQUAL  "cov")
     add_compile_options(--coverage -fPIC -O0 -fprofile-abs-path -g)  # gcov + valgrind req
     add_link_options(--coverage)                                     # gcov req
     add_compile_definitions(SMART_LOG WITH_HID_LOG)  # more info to debug ci
-    set(_cxx_std  cxx_std_20)  # try c++20/23 to see cov rate inc or not
+    # stay on 17, the standard this library promises. GCC 16 with -std=c++26
+    # zero-fills locals, which would hide uninit reads from valgrind.
 
 elseif(ci  STREQUAL  "asan" OR ci  STREQUAL  "tsan")
     # shared: debug info + -O2. asan also stack-protects; tsan does not (unrelated to races)
@@ -37,10 +38,24 @@ elseif(ci  STREQUAL  "asan" OR ci  STREQUAL  "tsan")
     if(ci STREQUAL "asan")
         message(STATUS "ci=asan: asan+lsan+ubsan (use-after-free, double-free, out-of-bound, leak, undef)")
         add_compile_definitions(SMART_LOG)
+        # ASan does not know vector::size(). This annotates [size, capacity) so that
+        # data()/pointer walks past size are caught. vector<bool> has no annotation.
+        add_compile_definitions(_GLIBCXX_SANITIZE_VECTOR)
         add_compile_options(-fstack-protector-strong)  # stack overflow; glibc already has __stack_chk_fail
         add_compile_options(-fsanitize=address,undefined)
         add_compile_options(-fno-sanitize-recover=undefined)  # UBSan stops; ASan already does
         add_link_options(-fsanitize=address,undefined)
+        # Newest dialect both CMake and this compiler accept, so a newer -std
+        # that rejects today's source fails here. ubuntu-latest's g++ may be
+        # older than a dev machine, so this can land on 23 or 20. The checks
+        # are the macros above, not the dialect.
+        foreach(_s 26 23 20)
+            if("cxx_std_${_s}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+                set(_cxx_std  cxx_std_${_s})
+                break()
+            endif()
+        endforeach()
+        message(STATUS "ci=asan: standard ${_cxx_std}")
     else()
         message(STATUS "ci=tsan: thread; UniCoutLog; halt_on_error is in UtSoak.cpp")
         add_compile_options(-fsanitize=thread)
@@ -54,7 +69,7 @@ elseif(ci  STREQUAL  "release")
     # - freorder-functions              : place mutually-called funcs adjacent (better i-cache)
     # - ffunction-sections/fdata-s.     : 1 section per func, lets linker drop dead code & re-pack hot
     # - Wl,--gc-sections                : actually drop unused sections at link time
-    # - NDEBUG                          : disable assert in hot path
+    # - NDEBUG                          : disable assert() in hot path
     # NOTE: -flto is intentionally OFF here; with our toolchain it merges all blocks back into a
     #       single .text and defeats the section partitioning we want to verify.
     message(STATUS "ci=release: max perf, hot/cold sections separated by compiler; no ut/")
@@ -76,9 +91,15 @@ else()
     endif()
 endif()
 
-# not release: soak/ut helpers. Must be before add_subdirectory(src); later targets do not see it.
+# Before add_subdirectory(src): later targets do not see directory definitions.
+# operator[] checks size(), including vector<bool>. NDEBUG does not turn this off.
+# GCC 15+ enables it by itself only at -O0; older GCC never does.
+# 100k-event chain, -O3, TRACE_OFF=1, g++ 15.2: median 51ms without, 53ms with; ranges overlap.
+# not -fhardened: Ubuntu g++ already defines _FORTIFY_SOURCE, so -fhardened warns,
+# and -Werror on lib_domino turns that warning into a build failure.
+add_compile_definitions(_GLIBCXX_ASSERTIONS)
 if(NOT ci STREQUAL "release")
-    add_compile_definitions(IN_ALL_UT)
+    add_compile_definitions(IN_ALL_UT)  # soak/ut helpers
 endif()
 
 #add_compile_options(-fno-exceptions)  # inc branch coverage

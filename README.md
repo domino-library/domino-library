@@ -37,7 +37,7 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 
 - **[`ut/`](ut) each UT case is an end-to-end scenario.**
 - [GitHub Actions](https://github.com/domino-library/domino-library/actions/workflows/ci.yml)
-  runs GoogleTest under Valgrind on pushes, pull requests, and a weekly schedule.
+  runs GoogleTest under Valgrind, and a separate AddressSanitizer job, on pushes, pull requests, and a weekly schedule.
 - [High line & branch coverage](ut/gcovr/gcovr.cfg).
 - The currently verified CI environment is **Ubuntu + GCC**.
 
@@ -45,7 +45,9 @@ Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 
 Requirements: CMake 3.16 or newer and a C++17-capable compiler.
 
-Ask AI for details.
+Every build passes `-D_GLIBCXX_ASSERTIONS`, so `operator[]` checks `size()` at `-O2`/`-O3` and with `NDEBUG`. Pass the same macro when including these headers: the template is compiled in the caller's translation unit, and the linker can keep that copy.
+
+`cmake -Dci=asan` uses the newest of C++26, C++23, and C++20 that this CMake and compiler both accept, and passes `-D_GLIBCXX_SANITIZE_VECTOR` so AddressSanitizer can see a `vector` access between `size()` and `capacity()`.
 
 ## Contributing
 

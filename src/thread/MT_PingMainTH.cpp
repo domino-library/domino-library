@@ -35,7 +35,7 @@ bool mt_reqMainTH(const char* aFn) noexcept
         return true;
 
     // EMG for rare: safe & min notification to usr
-    EMG("(MT_PingMainTH) !!! %s() must in main-thread", aFn ? aFn : "?");
+    EMG("(MainTH) !!! %s() must in main-thread", aFn ? aFn : "?");
     return false;
 }
 }  // namespace

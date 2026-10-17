@@ -35,6 +35,9 @@ jobs:
         done < <(git ls-files -- '*.hpp' '*.cpp' '*.py' '*.sh' '*CMakeLists.txt')
         exit $fail
 
+    - name: compiler
+      run: g++ --version && cmake --version
+
     - name: install valgrind
       run: sudo apt-get update && sudo apt-get install valgrind
 
@@ -70,3 +73,19 @@ jobs:
         verbose: true
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  asan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: compiler
+      run: g++ --version && cmake --version
+
+    - name: make asan
+      run: cmake -Dci=asan -DCMAKE_CXX_COMPILER="g++" -S . -B build-asan && cmake --build build-asan -j
+
+    - name: ut
+      run: ./build-asan/ut_exe --gtest_brief=1
