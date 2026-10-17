@@ -45,10 +45,9 @@ elseif(ci  STREQUAL  "asan" OR ci  STREQUAL  "tsan")
         add_compile_options(-fsanitize=address,undefined)
         add_compile_options(-fno-sanitize-recover=undefined)  # UBSan stops; ASan already does
         add_link_options(-fsanitize=address,undefined)
-        # Newest dialect both CMake and this compiler accept, so a newer -std
-        # that rejects today's source fails here. ubuntu-latest's g++ may be
-        # older than a dev machine, so this can land on 23 or 20. The checks
-        # are the macros above, not the dialect.
+
+        # - compatible test: c++17 vs c++26/23/20
+        # - safer asan from c++26/23/20
         foreach(_s 26 23 20)
             if("cxx_std_${_s}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
                 set(_cxx_std  cxx_std_${_s})

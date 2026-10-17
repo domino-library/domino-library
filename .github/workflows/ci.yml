@@ -19,7 +19,7 @@ concurrency:  # 1 PR multi-push, cance old
   cancel-in-progress: true
 
 jobs:
-  build:
+  valgrind_cov:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -74,7 +74,7 @@ jobs:
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  asan:
+  cpp26_asan:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
