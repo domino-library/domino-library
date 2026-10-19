@@ -42,12 +42,9 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <array>
 #include <deque>
 #include <functional>
 
-#include "MT_PingMainTH.hpp"
-#include "UniLog.hpp"
 #include "UniPtr.hpp"
 
 #define MSG_SELF (ObjAnywhere::getObj<MsgSelf>())

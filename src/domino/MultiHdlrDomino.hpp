@@ -20,12 +20,8 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <map>
-#include <memory>
-#include <string>
-#include <unordered_map>
-
-#include "UniLog.hpp"
+#include "Domino.hpp"
+#include "MsgSelf.hpp"
 
 namespace rlib
 {
@@ -79,7 +75,7 @@ void MultiHdlrDomino<aDominoType>::effect_(Domino::Event aEv) noexcept
     // call my hdlr(s)
     for (auto&& name_hdlr = ev_hdlrs->second.begin(); name_hdlr != ev_hdlrs->second.end();)
     {
-        auto&& itNext = next(name_hdlr);
+        auto&& itNext = std::next(name_hdlr);
         HID("(MultiHdlrDom) trigger 1 hdlr=" << name_hdlr->first << " of EvName=" << this->evName_(aEv));
         this->triggerHdlr_(name_hdlr->second, aEv);  // may rm name_hdlr in FreeHdlrDomino
         name_hdlr = itNext;
@@ -181,7 +177,8 @@ bool MultiHdlrDomino<aDominoType>::rmOneHdlrOK_(Domino::Event aValidEv, const Sh
 
     // rm
     auto&& ev_hdlrs = ev_hdlrs_S_.find(aValidEv);
-    // if (ev_hdlrs == ev_hdlrs_S_.end()) return false;  // impossible if valid aValidHdlr
+    if (ev_hdlrs == ev_hdlrs_S_.end())  // GCOVR_EXCL_BR_LINE
+        return false;  // GCOVR_EXCL_LINE a valid hdlr should hit; a miss must not walk end()
     for (auto&& name_hdlr = ev_hdlrs->second.begin(); name_hdlr != ev_hdlrs->second.end(); ++name_hdlr)
     {
         if (name_hdlr->second != aValidHdlr)

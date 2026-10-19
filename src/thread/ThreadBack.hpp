@@ -39,9 +39,7 @@
 
 #include <functional>
 
-#include "MT_PingMainTH.hpp"
 #include "SafePtr.hpp"
-#include "UniLog.hpp"
 
 #define THREAD_BACK  (rlib::ObjAnywhere::getObj<rlib::ThreadBack>())
 

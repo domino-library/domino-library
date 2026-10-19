@@ -14,8 +14,7 @@
 #pragma once
 
 #include "DataStore.hpp"
-#include "UniLog.hpp"
-#include "UniPtr.hpp"
+#include "Domino.hpp"
 
 namespace rlib
 {
@@ -75,8 +74,7 @@ bool DataDomino<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, S_PTR
 template<typename aDominoType>
 void DataDomino<aDominoType>::rmEv_(Domino::Event aValidEv) noexcept
 {
-    const auto replaced = ev_data_S_.replaceOK(aValidEv, nullptr);
-    (void)replaced;
+    [[maybe_unused]] const auto replaced = ev_data_S_.replaceOK(aValidEv, nullptr);
     aDominoType::rmEv_(aValidEv);
 }
 

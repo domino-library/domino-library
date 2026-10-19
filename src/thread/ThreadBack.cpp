@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 #include <utility>
+
+#include "MT_PingMainTH.hpp"
 #include "ThreadBack.hpp"
 
 using namespace std;

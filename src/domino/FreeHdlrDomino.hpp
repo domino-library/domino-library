@@ -21,8 +21,8 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cstdio>
-#include <vector>
+#include "Domino.hpp"
+#include "MsgSelf.hpp"
 
 namespace rlib
 {

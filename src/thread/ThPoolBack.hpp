@@ -20,10 +20,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <list>
-#include <mutex>
-#include <thread>
-#include <vector>
 
+#include "MT_PingMainTH.hpp"
 #include "ThreadBack.hpp"
 
 namespace rlib

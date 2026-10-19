@@ -5,24 +5,16 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 // ***********************************************************************************************
-#include <atomic>
-#include <chrono>
-#include <future>
-#include <gtest/gtest.h>
-#include <iostream>
-#include <memory>
-#include <thread>
-#include <type_traits>
 
-#include "ThreadBack.hpp"
-
-#include "AsyncBack.hpp"
-#include "MT_PingMainTH.hpp"
 #include "MtInQueue.hpp"
-#include "ThPoolBack.hpp"
 #include "ThreadBackViaMsgSelf.hpp"
-#include "UniLog.hpp"
 #include "UtInitObjAnywhere.hpp"
+
+// Includers define these before the include. Defaults make the header compile on its own.
+#ifndef THREAD_BACK_TYPE
+#define THREAD_BACK_TYPE AsyncBack
+#define THREAD_BACK_TEST ThreadBackTest
+#endif
 
 using namespace testing;
 

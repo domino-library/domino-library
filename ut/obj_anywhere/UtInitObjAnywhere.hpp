@@ -10,18 +10,10 @@
 #pragma once
 
 #include <gtest/gtest.h>
-#include <iostream>
-#include <type_traits>
-#include <unordered_map>
-#include <vector>
 
-#include "UniLog.hpp"
-#include "MsgSelf.hpp"
-#include "ObjAnywhere.hpp"
 #include "UtSoak.hpp"
 
 #include "AsyncBack.hpp"
-#include "Domino.hpp"
 #include "DataDomino.hpp"
 #include "WbasicDatDom.hpp"
 #include "HdlrDomino.hpp"

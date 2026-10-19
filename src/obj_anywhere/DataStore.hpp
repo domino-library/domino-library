@@ -17,7 +17,6 @@
 
 #include <unordered_map>
 
-#include "UniLog.hpp"
 #include "UniPtr.hpp"
 
 namespace rlib

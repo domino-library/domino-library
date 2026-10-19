@@ -7,6 +7,13 @@
 // ***********************************************************************************************
 #include <gtest/gtest.h>
 
+// Includers define these before the include. Defaults make the header compile on its own.
+#ifndef UNI_LOG
+#define UNI_LOG      UniCoutLog
+#define UNI_LOG_TEST UniLogTest
+#include "UniCoutLog.hpp"
+#endif
+
 using namespace testing;
 
 namespace rlib

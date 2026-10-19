@@ -10,16 +10,9 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <chrono>
-#include <cstdarg>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <ctime>
-#include <exception>
+#include <iostream>
 #include <mutex>
-#include <ostream>
-#include <string>
 #include <thread>
 
 using LogName = std::string;

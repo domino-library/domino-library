@@ -302,7 +302,7 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
 }
 
 // ***********************************************************************************************
-size_t Domino::setState(const SimuEvents& aSimuEvents)
+size_t Domino::setState(const SimuEvents& aSimuEvents) noexcept
 {
     // validate
     for (auto&& [en, state] : aSimuEvents)

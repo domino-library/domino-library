@@ -25,15 +25,9 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cstdio>
-#include <functional>
-#include <stdexcept>
-#include <vector>
-
+#include "Domino.hpp"
 #include "MsgSelf.hpp"
 #include "ObjAnywhere.hpp"
-#include "UniLog.hpp"
-#include "UniPtr.hpp"
 
 namespace rlib
 {
@@ -97,7 +91,7 @@ HdlrDomino<aDominoType>::HdlrDomino(const LogName& aUniLogName) : aDominoType(aU
 template<class aDominoType>
 void HdlrDomino<aDominoType>::cb_hdlr_(Domino::Event aValidEv, const WeakMsgCB& aWeakCB) noexcept
 {
-    if (auto cb = aWeakCB.lock()) {  // cb avilable
+    if (auto cb = aWeakCB.lock()) {  // cb available
         try { (*(cb.get()))(); }  // setHdlr() forbid cb==null
         catch(...) {
             EMG("(HdlrDomino) hdlr() except=%s, ev=%zu", mt_exceptInfo(), aValidEv);

@@ -13,7 +13,6 @@
 //
 // - mem safe: yes
 // ***********************************************************************************************
-#include <memory>
 
 #include "MsgSelf.hpp"
 #include "ObjAnywhere.hpp"

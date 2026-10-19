@@ -33,12 +33,8 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cstdlib>
-#include <functional>
 #include <memory>
-#include <type_traits>
 #include <typeindex>
-#include <utility>
 
 #include "UniLog.hpp"
 

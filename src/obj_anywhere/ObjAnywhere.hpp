@@ -23,13 +23,7 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <string>
-#include <typeinfo>
-#include <utility>  // std::forward
-
 #include "DataStore.hpp"
-#include "UniLog.hpp"
-#include "UniPtr.hpp"
 
 namespace rlib
 {

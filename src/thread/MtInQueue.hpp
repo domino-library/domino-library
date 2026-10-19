@@ -25,16 +25,10 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <cstdio>
 #include <deque>
 #include <functional>
-#include <mutex>
-#include <typeindex>
-#include <utility>
-#include <vector>
 
 #include "MT_PingMainTH.hpp"
-#include "UniLog.hpp"
 #include "UniPtr.hpp"
 
 namespace rlib

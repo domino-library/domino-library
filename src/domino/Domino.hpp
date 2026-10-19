@@ -48,7 +48,6 @@
 #pragma once
 
 #include <map>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -95,7 +94,7 @@ public:
 
     [[nodiscard]] bool state(const EvName& aEvName) const noexcept { return state(getEventBy(aEvName)); }
     [[nodiscard]] bool state(Event aEv) const noexcept { return aEv < states_.size() ? states_[aEv] : false; }
-    size_t setState(const SimuEvents&);  // ret real changed ev#
+    size_t setState(const SimuEvents&) noexcept;  // ret real changed ev#
 
     Event  setPrev(const EvName&, const SimuEvents&) noexcept;  // be careful not create eg true-false loop
     [[nodiscard]] EvName whyFalse(Event) const noexcept;  // debug only; read-only API - no hurt if fake Event
@@ -165,7 +164,7 @@ public:
 // 2019-11-11  CSZ       - debug(rm/hide/nothingChanged)
 //                       5)domino is practical; waiting formal & larger practice
 // 2020-02-06  CSZ       - whyFalse(EvName)
-// 2020-04-03  CSZ       - contain msgSelf_ so multi Domino can be used simulteneously
+// 2020-04-03  CSZ       - contain msgSelf_ so multi Domino can be used simultaneously
 // 2020-06-10  CSZ       - dmnID_ to identify different domino instance
 // 2020-08-21  CSZ       - most map to unordered_map for search performance
 // 2020-11-17  CSZ       - multi-hdlr from Domino to MultiHdlrDomino since single hdlr is enough

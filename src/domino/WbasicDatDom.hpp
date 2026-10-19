@@ -12,9 +12,7 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <vector>
-
-#include "UniLog.hpp"
+#include "Domino.hpp"
 #include "UniPtr.hpp"
 
 namespace rlib
@@ -39,7 +37,7 @@ protected:
     void rmEv_(Domino::Event aValidEv) noexcept override;
 
 private:
-    // forbid ouside use base directly
+    // forbid outside use base directly
     using aDominoType::getData;
     using aDominoType::replaceDataOK;
     bool isWrCtrl_(Domino::Event aEv) const noexcept { return aEv < wrCtrl_.size() ? wrCtrl_[aEv] : false; }
@@ -153,7 +151,7 @@ template<typename aDataDominoType, typename aDataType>
 }  // namespace
 // ***********************************************************************************************
 // - why not wbasic_setValueOK() auto call wrCtrlOk()?
-//   . auto is more convient & efficient
+//   . auto is more convenient & efficient
 //   . but impact wbasic_setValueOK(), wbasic_getData(), setValue(), getData(), logic complex
 //   . user may mis-use setValue/getData(write-ctrl-data)
 // - why also read ctrl?

@@ -16,7 +16,6 @@
 // ***********************************************************************************************
 #pragma once
 
-#include <atomic>
 #include <semaphore.h>
 
 namespace rlib
