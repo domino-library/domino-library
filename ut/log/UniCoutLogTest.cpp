@@ -10,6 +10,7 @@
 
 #include "StrCoutFSL.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <fcntl.h>
 #include <initializer_list>
@@ -17,6 +18,7 @@
 #include <stdlib.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 #define UNI_LOG_TEST UniCoutLogTest
 #define UNI_LOG      UniCoutLog
@@ -274,20 +276,39 @@ static bool endsWith(const std::string& aLine, const char* aMark)
 
 // a whole line starts with one prefix and ends with one mark.
 // catching "c[" only inside the line misses a full line inserted into another line's prefix.
+// empty text fails: a missing log must not look like a pass. each mark appears at least once.
 static void expectWholeLines(const std::string& aText, std::initializer_list<const char*> aMarks)
 {
+    std::vector<size_t> nSeen(aMarks.size(), 0);
     std::istringstream in(aText);
     std::string line;
+    size_t nLine = 0;
     while (std::getline(in, line))
     {
+        ++nLine;
         const bool isInf = line.rfind("c[", 0) == 0;
         const bool isHid = line.rfind("cout[", 0) == 0;
         EXPECT_TRUE(isInf || isHid) << "REQ: line starts with a prefix, got: " << line;
         EXPECT_EQ(line.find("c[", 1), std::string::npos) << "REQ: one prefix per line, got: " << line;
         size_t nMark = 0;
+        size_t i = 0;
         for (auto m : aMarks)
-            nMark += endsWith(line, m);
+        {
+            if (endsWith(line, m))
+            {
+                ++nMark;
+                ++nSeen[i];
+            }
+            ++i;
+        }
         EXPECT_EQ(nMark, 1u) << "REQ: line ends with one mark, got: " << line;
+    }
+    EXPECT_GT(nLine, 0u) << "REQ: at least one log line";
+    size_t i = 0;
+    for (auto m : aMarks)
+    {
+        EXPECT_GT(nSeen[i], 0u) << "REQ: mark present: " << m;
+        ++i;
     }
 }
 
@@ -534,6 +555,57 @@ TEST_F(UniCoutLogTest, TRC_followsSwitch_fileToFile)
     EXPECT_EQ(textB.find("IN-A"), std::string::npos) << "REQ: A's TRC was flushed before the switch";
     std::remove(fileA.c_str());
     std::remove(fileB.c_str());
+}
+
+// - std::hex in one line must not change the next line. two lines, one mark each.
+TEST_F(UniCoutLogTest, inf_hex_resetsBeforeNextLine)
+{
+    CoutCapture cap;
+    INF(std::hex << 255);
+    INF("MARK-DEC " << 10);
+    std::cout.flush();
+    const auto text = cap.buf.str();
+    EXPECT_EQ(std::count(text.begin(), text.end(), '\n'), 2);
+    expectWholeLines(text, {"ff", "MARK-DEC 10"});
+}
+
+// - the streamed expression throws: the line still ends, and the exception propagates
+TEST_F(UniCoutLogTest, inf_throw_closesLine)
+{
+    struct Boom {};
+    CoutCapture cap;
+    bool threw = false;
+    try
+    {
+        INF("pre " << []() -> int { throw Boom{}; }());
+    }
+    catch (const Boom&)
+    {
+        threw = true;
+    }
+    INF("MARK-AFTER");
+    std::cout.flush();
+    EXPECT_TRUE(threw) << "REQ: INF does not swallow the streamed expression";
+    const auto text = cap.buf.str();
+    EXPECT_EQ(std::count(text.begin(), text.end(), '\n'), 2);
+    expectWholeLines(text, {"pre ", "MARK-AFTER"});
+}
+
+// - regression: WRN still reaches the file with no later flush. this guards the old flush policy.
+TEST_F(UniCoutLogTest, wrn_flushesToFile)
+{
+    const std::string fname = "ut_log_wrn_flush.log";
+    std::remove(fname.c_str());
+    ASSERT_TRUE(UniCoutLog::setLogFileOK(fname));
+    WRN("MARK-WRN");
+
+    std::ifstream fin(fname);
+    std::string line;
+    std::getline(fin, line);
+    EXPECT_NE(line.find("MARK-WRN"), std::string::npos) << "REQ: WRN flush makes the line readable";
+
+    EXPECT_TRUE(UniCoutLog::setLogFileOK(""));
+    std::remove(fname.c_str());
 }
 
 }  // namespace rlib

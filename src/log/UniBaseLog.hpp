@@ -18,6 +18,7 @@
 #include <ctime>
 #include <exception>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <thread>
 
@@ -27,21 +28,58 @@ using LogName = std::string;
 // - mem safe: yes
 // - MT safe : yes of UniCoutLog, no of UniSmartLog
 #ifdef __FILE_NAME__  // g++12/c++20
-#define BUF(content) __FILE_NAME__ << ':' << __func__ << "():" << __LINE__ << ": " << content << '\n'
+#define RLIB_LOG_LOC_ __FILE_NAME__ << ':' << __func__ << "():" << __LINE__ << ": "
 #else
-#define BUF(content)                         __func__ << "():" << __LINE__ << ": " << content << '\n'
+#define RLIB_LOG_LOC_                         __func__ << "():" << __LINE__ << ": "
 #endif
 
+namespace rlib
+{
 // ***********************************************************************************************
-// flush policy:
+// - closes one INF/WRN/ERR line, including when the streamed expression throws
+// - declared after the line object, so it runs while UniCoutLog::Line still holds coutMutex_()
+// - std::dec restores the base only (dec/hex/oct). fixed, precision, boolalpha, showbase, fill stay
+// - flush: UniCoutLog only. SmartLog's streambuf::sync() is a no-op; text waits for forceSave()
+template<class Stream>
+class LogLineEnd
+{
+public:
+    LogLineEnd(Stream& aOs, bool aFlush) noexcept : os_(aOs), flush_(aFlush) {}
+    ~LogLineEnd() noexcept
+    {
+        try
+        {
+            os_ << std::dec << '\n';
+            if (flush_) os_ << std::flush;
+        }
+        catch (...) {}  // GCOVR_EXCL_LINE a throwing destructor would terminate
+    }
+
+    LogLineEnd(const LogLineEnd&) = delete;
+    LogLineEnd& operator=(const LogLineEnd&) = delete;
+
+private:
+    Stream& os_;
+    bool flush_;
+};
+}  // namespace rlib
+
+// ***********************************************************************************************
+// flush policy (the flag is for UniCoutLog; SmartLog ignores std::flush):
 // - ERR: flush (to avoid loss)
 // - WRN: flush (to avoid loss)
 // - INF: NO flush (rely on stream buffer + atexit-flush; ~50% perf gain w/o flush)
 // - TRC: NO flush (most perf)
+// - one argument: a comma inside <> or {} is a second argument unless the call wraps it in ()
 // - do-while: avoid dangling-else; allow tmp var, break/etc; same performance as {} block
-#define INF(content) do{ oneLog() << "INF/" << std::this_thread::get_id() << "] " << BUF(content);               }while(0)
-#define WRN(content) do{ oneLog() << "WRN/" << std::this_thread::get_id() << "] " << BUF(content) << std::flush; }while(0)
-#define ERR(content) do{ oneLog() << "ERR/" << std::this_thread::get_id() << "] " << BUF(content) << std::flush; }while(0)
+#define RLIB_LOG_(aLevel, aFlush, aMsg) do { \
+    auto&& rlibLogLn_ = oneLog(); \
+    ::rlib::LogLineEnd rlibLogEnd_(rlibLogLn_, aFlush); \
+    rlibLogLn_ << aLevel << std::this_thread::get_id() << "] " << RLIB_LOG_LOC_ << aMsg; \
+} while (0)
+#define INF(aMsg) RLIB_LOG_("INF/", false, aMsg)
+#define WRN(aMsg) RLIB_LOG_("WRN/", true,  aMsg)
+#define ERR(aMsg) RLIB_LOG_("ERR/", true,  aMsg)
 
 // ***********************************************************************************************
 // - TRC/trace: hot-path event log for eg visualization (log -> Excel Gantt)
@@ -61,7 +99,7 @@ namespace rlib { inline bool traceOn_ = (std::getenv("TRACE_OFF") == nullptr); }
 #define HID(content) do { \
     std::lock_guard<std::recursive_mutex> guard_(rlib::coutMutex_()); \
     std::cout << "cout[" << rlib::mt_timestamp() << "/HID/" \
-        << std::this_thread::get_id() << "] " << BUF(content) << std::dec << std::flush; \
+        << std::this_thread::get_id() << "] " << RLIB_LOG_LOC_ << content << '\n' << std::dec << std::flush; \
 } while (0)
 #else
 #define HID(content) {}
@@ -191,4 +229,5 @@ constexpr char ULN_DEFAULT[] = "DEFAULT";
 // 2025-04-07  CSZ       3)tolerate exception; MT safe
 // 2026-04-17  CSZ       4)TRC; perf opt other logs
 // 2026-10-16  CSZ       5)EMG
+// 2026-10-18  CSZ       - professionalize
 // ***********************************************************************************************
