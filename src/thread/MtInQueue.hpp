@@ -161,7 +161,7 @@ bool MtInQueue::setHdlrOK(EleHdlr aHdlr) noexcept
     try {
         tid_hdlr_S_.emplace_back(std::type_index(typeid(aEleType)), std::move(aHdlr));
     } catch(...) {  // ut can't cover this branch; rare but safer
-        ERR("(MtQ) except=" << mt_exceptInfo() << " in setHdlrOK");
+        EMG("(MtQ) except=%s in setHdlrOK", mt_exceptInfo());
         return false;
     }
     return true;

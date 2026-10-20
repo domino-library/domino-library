@@ -26,7 +26,7 @@ AsyncBack::AsyncBack(size_t aMaxAsync)
         fut_backFN_S_.reserve(aMaxAsync);  // not construct any async; better perf for most cases
         maxInFlight_ = aMaxAsync;  // construct-time limit for limitNewTaskOK
     } catch(...) {  // ut can't cover this branch; rare but safer
-        ERR("(AsyncBack) Except=" << mt_exceptInfo() << " when reserving aMaxAsync=" << aMaxAsync);
+        EMG("(AsyncBack) Except=%s when reserving aMaxAsync=%zu", mt_exceptInfo(), aMaxAsync);
         throw;
     }
 }
@@ -50,7 +50,7 @@ bool AsyncBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLog
         });
         return true;
     } catch(...) {  // reserve or async() failed before a task was kept
-        ERR("(AsyncBack) except=" << mt_exceptInfo() << " to create new thread!!!");
+        EMG("(AsyncBack) except=%s to create new thread!!!", mt_exceptInfo());
         return false;
     }
 }  // newTaskOK

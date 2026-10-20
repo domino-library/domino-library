@@ -33,7 +33,7 @@ void ObjAnywhere::init(UniLog& oneLog) noexcept
         name_obj_S_ = make_unique<DataStore<ObjName>>();
         HID("(ObjAnywhere) Succeed.");
     } catch(...) {
-        ERR("(ObjAnywhere) !!! init failed, except=" << mt_exceptInfo());
+        EMG("(ObjAnywhere) !!! init failed, except=%s", mt_exceptInfo());
     }
 }
 }  // namespace

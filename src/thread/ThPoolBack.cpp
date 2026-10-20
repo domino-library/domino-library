@@ -34,7 +34,7 @@ ThPoolBack::ThPoolBack(size_t aMaxThread, size_t aMaxTaskQ)
             thPool_.emplace_back(&ThPoolBack::mt_threadMain_, this);
     } catch(...) {  // ut can't cover this branch; rare but safer
         clean_();
-        ERR("(ThPoolBack) Except=" << mt_exceptInfo() << " when creating nThread=" << aMaxThread);
+        EMG("(ThPoolBack) Except=%s when creating nThread=%zu", mt_exceptInfo(), aMaxThread);
         throw;  // break constructor
     }
 }
@@ -152,7 +152,7 @@ bool ThPoolBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLo
         return true;
     } catch(...) {  // ut can't cover: push_back throws only on bad_alloc
         // node was not queued; ~backFN already ran on this thread
-        ERR("(ThPoolBack) except=" << mt_exceptInfo() << " in newTaskOK");
+        EMG("(ThPoolBack) except=%s in newTaskOK", mt_exceptInfo());
         return false;  // GCOVR_EXCL_LINE
     }
 }

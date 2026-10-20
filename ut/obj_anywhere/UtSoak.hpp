@@ -8,6 +8,8 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <cstdio>
+#include <cstdlib>
 #include <unistd.h>
 
 #include "UniLog.hpp"
@@ -22,15 +24,15 @@ inline int soakIter_ = 0;
 inline size_t rssBytes()
 {
     size_t rss = 0;
-    FILE* f = fopen("/proc/self/statm", "r");
+    std::FILE* f = std::fopen("/proc/self/statm", "r");
     if (f) {
         unsigned long dummy, pages;
-        if (fscanf(f, "%lu %lu", &dummy, &pages) == 2)
+        if (std::fscanf(f, "%lu %lu", &dummy, &pages) == 2)
         {
             const long page = sysconf(_SC_PAGESIZE);
             rss = pages * static_cast<size_t>(page > 0 ? page : 4096);
         }
-        fclose(f);
+        std::fclose(f);
     }
     return rss;
 }

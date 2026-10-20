@@ -20,6 +20,7 @@ namespace rlib
 struct ObjAnywhereTest : public Test, public UniLog
 {
     ObjAnywhereTest() : UniLog(UnitTest::GetInstance()->current_test_info()->name()) {}
+    void TearDown() override { ObjAnywhere::deinit(); }
     ~ObjAnywhereTest() { GTEST_LOG_FAIL }
 };
 
@@ -38,7 +39,6 @@ TEST_F(ObjAnywhereTest, GOLD_setThenGetIt)
 
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<int>(nullptr, *this)) << "REQ: set null succ";
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>().get()) << "REQ: get null";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, get_replacement)
 {
@@ -52,13 +52,11 @@ TEST_F(ObjAnywhereTest, get_replacement)
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<int>(nullptr, *this));
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(p2, *this));
     EXPECT_EQ(p2.get(), ObjAnywhere::getObj<int>().get()) << "REQ: explicit rm then set ok";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, noSet_getNull)
 {
     ObjAnywhere::init(*this);
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>().get()) << "REQ: get null";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, deinit_getNull)
 {
@@ -78,7 +76,6 @@ TEST_F(ObjAnywhereTest, emptyName_getNull)
     EXPECT_EQ(nullptr, ObjAnywhere::getObj<int>("").get()) << "REQ: empty name -> null";
     EXPECT_FALSE(ObjAnywhere::emplaceObjOK(make_ptr<int>(99), *this, "")) << "REQ: emplace empty name -> fail (OA-1)";
     EXPECT_EQ(42, *(ObjAnywhere::getObj<int>("validName").get())) << "REQ: valid name still works";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, GOLD_defaultName_distinctTypes)
 {
@@ -92,7 +89,6 @@ TEST_F(ObjAnywhereTest, GOLD_defaultName_distinctTypes)
     EXPECT_EQ('z', *(ObjAnywhere::getObj<char>().get())) << "REQ: get char by default name";
     EXPECT_EQ(ObjAnywhere::getObj<int>().get(), ObjAnywhere::getObj<int>().get())
         << "REQ: default name stable across calls (same obj)";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, GOLD_newObjOK_constructInPlace)
 {
@@ -100,7 +96,6 @@ TEST_F(ObjAnywhereTest, GOLD_newObjOK_constructInPlace)
     EXPECT_TRUE(ObjAnywhere::newObjOK<int>(1234))        << "REQ: construct obj in-place by ctor arg (no pre-made ptr)";
     EXPECT_EQ(1234, *(ObjAnywhere::getObj<int>().get())) << "REQ: get constructed obj by default name";
     EXPECT_FALSE(ObjAnywhere::newObjOK<int>(5678))       << "REQ: default name already used -> refuse replace";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, newObjOK_forwardMultiArg)
 {
@@ -110,7 +105,6 @@ TEST_F(ObjAnywhereTest, newObjOK_forwardMultiArg)
     ASSERT_NE(nullptr, p.get());
     EXPECT_EQ(3, p.get()->first);
     EXPECT_EQ(7, p.get()->second) << "REQ: args forwarded in order";
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, newObjOK_noInit_fail)
 {
@@ -155,8 +149,6 @@ TEST_F(ObjAnywhereTest, destructBySetNull)
 
     EXPECT_FALSE(ObjAnywhere::emplaceObjOK(SPtr<TestObj>(), *this)) << "REQ: rm again NOK";
     EXPECT_EQ(0u, ObjAnywhere::nObj());
-
-    ObjAnywhere::deinit();
 }
 
 #define INIT_DEINIT
@@ -186,7 +178,6 @@ TEST_F(ObjAnywhereTest, ignore_dup_init)
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(pChar, *this)) << "REQ: set OK";
     ObjAnywhere::init(*this);  // req: ignore dup init
     EXPECT_EQ(pChar.get(), ObjAnywhere::getObj<char>().get());
-    ObjAnywhere::deinit();
 }
 TEST_F(ObjAnywhereTest, default_is_deinit)
 {

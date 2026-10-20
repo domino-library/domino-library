@@ -74,7 +74,7 @@ private:
     // @brief: default key of aObjType (cached per-type); single source of truth for both get & emplace
     template<typename aObjType> [[nodiscard]] static const ObjName& defaultObjName() noexcept
     {
-        // name()+hash_code(): readable + hash avoids collision (eg int vs long)
+        // name() is not required unique; hash_code() appended as an extra guard
         static const ObjName name = typeid(aObjType).name() + ('/' + std::to_string(typeid(aObjType).hash_code()));
         return name;
     }

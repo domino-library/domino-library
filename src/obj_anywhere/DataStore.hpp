@@ -67,7 +67,7 @@ bool DataStore<aDataKey>::emplaceOK(const aDataKey& aKey, SPtr<void> aData) noex
             }
         }
     } catch(...) {
-        ERR("(DataStore) except=" << mt_exceptInfo() << ", key=" << typeid(aDataKey).name());
+        EMG("(DataStore) except=%s, key=%s", mt_exceptInfo(), typeid(aDataKey).name());
         return false;
     }
 }
@@ -86,7 +86,7 @@ SPtr<aDataT> DataStore<aDataKey>::get(const aDataKey& aKey) const noexcept
         }
         return static_ptr_cast<aDataT>(key_data->second);  // mem safe: yes SafePtr, no shared_ptr
     } catch(...) {
-        ERR("(DataStore) except=" << mt_exceptInfo() << ", key=" << typeid(aDataKey).name());
+        EMG("(DataStore) except=%s, key=%s", mt_exceptInfo(), typeid(aDataKey).name());
         return nullptr;
     }
 }
@@ -102,7 +102,7 @@ bool DataStore<aDataKey>::replaceOK(const aDataKey& aKey, SPtr<void> aData) noex
         key_data_S_.insert_or_assign(aKey, std::move(aData));
         return true;
     } catch(...) {
-        ERR("(DataStore) except=" << mt_exceptInfo() << ", key=" << typeid(aDataKey).name());
+        EMG("(DataStore) except=%s, key=%s", mt_exceptInfo(), typeid(aDataKey).name());
         return false;
     }
 }

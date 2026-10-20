@@ -13,24 +13,28 @@
 #include "UniPtr.hpp"
 
 // ***********************************************************************************************
+// Key is a program type. Only the std::hash specialization may live in namespace std.
+namespace rlib
+{
+struct Key {
+    int except_ = 1;
+    Key() = default;
+    Key(const Key& aSrc) : except_(aSrc.except_) {  // cp constructor
+        if (except_ == 1)
+            throw std::runtime_error("REQ: simulate except from Key constructor");
+    }
+    bool operator==(const Key& other) const { return except_ == other.except_; }
+};
+}
 namespace std
 {
-    struct Key {
-        int except_ = 1;
-        Key() = default;
-        Key(const Key& aSrc) : except_(aSrc.except_) {  // cp constructor
-            if (except_ == 1)
-                throw runtime_error("REQ: simulate except from Key constructor");
-        }
-        bool operator==(const Key& other) const { return except_ == other.except_; }
-    };
-    template<> struct hash<Key> {
-        size_t operator()(const Key& aK) const {
-            if (aK.except_ == 1)
-                throw runtime_error("REQ: simulate except from Key's hash");
-            return std::hash<int>()(aK.except_);
-        }
-    };
+template<> struct hash<rlib::Key> {
+    size_t operator()(const rlib::Key& aK) const {
+        if (aK.except_ == 1)
+            throw std::runtime_error("REQ: simulate except from Key's hash");
+        return std::hash<int>()(aK.except_);
+    }
+};
 }
 
 // ***********************************************************************************************
