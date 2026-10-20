@@ -14,34 +14,29 @@
 // - how:
 //   . newMsgOK(): send msgHdlr into msgQueues_ (all info are in msgHdlr so func<void()> is enough)
 //   . handleAllMsg(): call all msgHdlr in msgQueues_, priority then FIFO
-//   . single thread (in main thread)
-//   * support diff cb mechanism (async, IM, syscom, etc)
+//   . single thread, main thread only
+//   . wakeup: newMsgOK() -> mt_pingMainTH()
 //
 // - core: msgQueues_[priority][FIFO]
 //   . msgQueues_ is a 2D array, 1st dim is priority, 2nd dim is FIFO
 //   . perf better than priority_queue that need search & insert for newMsgOK()
 //
-// - which way?    speed                   UT                           code
-//   . async task  may slow if async busy  no but direct-CB instead     simple
-//   . IM          may ensure speed        no but direct-CB instead     Im, ActiveBtsL, StatusMo
-//   . syscom      may ensure speed        ?                            ?
-//   . (conclusion: async for product, direct-CB for UT)
 // - why MsgCB instead of WeakMsgCB in msgQueues_?
 //   . most users want MsgSelf (instead of themselves) to store cb (naturally; so MsgCB is better)
 //   . while only a few want to be able to withdraw cb in msgQueues_ (eg HdlrDomino; so WeakMsgCB is better)
 //
 // - class safe: yes
 //   . not responsible for MsgCB itself's any unsafe behavior
-//   . shared_ptr is safe since internal use only (pub-interface is MsgCB&)
-//     . principle: safe class can base on unsafe materials
-//     . SafePtr is just to test SafeWeak in real world
+//   . queue stores MsgCB by value; SharedMsgCB/WeakMsgCB belong to the caller, not the queue
 //   . not support callback after ~MsgSelf() since all msg discarded when ~MsgSelf()
 //     . UtInitObjAnywhere gives example how to provide a common callback for main()
+//   . caller keeps *this alive across handleAllMsg(); msg() must not drop the last owner
 //   . handleAllMsg() refuses reenter
-//   . not limit queue size as std lib, usr responds for safety
+//   . not limit queue size as std lib, usr is responsible for safety
 // ***********************************************************************************************
 #pragma once
 
+#include <array>
 #include <deque>
 #include <functional>
 
@@ -62,9 +57,6 @@ enum EMsgPriority : unsigned char
     EMsgPri_MAX
 };
 
-// !!! MsgCB shall NEVER throw exception!!!
-// - MsgCB can try-catch all exception
-// - exception is bug to be fixed than pretected
 using MsgCB        = std::function<void()>;
 using WeakMsgCB    = WPtr<MsgCB>;
 using SharedMsgCB  = SPtr<MsgCB>;

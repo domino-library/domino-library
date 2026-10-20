@@ -33,7 +33,7 @@ bool MsgSelf::handleOneMsg_() noexcept
             continue;
 
         auto msg = std::move(oneQueue.front());
-        oneQueue.pop_front();  // except can't recover->terminate
+        oneQueue.pop_front();
         --nMsg_;
 
         try { msg(); } // run 1st MsgCB; newMsgOK() prevent nullptr into msgQueues_
