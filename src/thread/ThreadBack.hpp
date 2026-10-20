@@ -40,6 +40,7 @@
 #include <functional>
 
 #include "SafePtr.hpp"
+#include "UniLog.hpp"
 
 #define THREAD_BACK  (rlib::ObjAnywhere::getObj<rlib::ThreadBack>())
 
@@ -56,7 +57,12 @@ public:
     // min for safety:
     // - discard backFN(): avoid longer & more complex scenario
     // - wait workers FOREVER: safe (& no choice)
+    ThreadBack() noexcept = default;
     virtual ~ThreadBack() noexcept = default;
+    ThreadBack(const ThreadBack&) = delete;
+    ThreadBack& operator=(const ThreadBack&) = delete;
+    ThreadBack(ThreadBack&&) = delete;
+    ThreadBack& operator=(ThreadBack&&) = delete;
 
     // @brief: Schedules an asynchronous task to be executed in a background thread.
     // @param MT_TaskEntryFN: The task to be executed asynchronously.
@@ -94,6 +100,7 @@ protected:
 // 2025-03-21  CSZ       2)enable exception: tolerate except is safer; can't recover except->terminate
 // 2026-10-13  CSZ       - enhance & unify dtor
 // 2026-10-14  CSZ       3)refactor since professional ThPoolBack
+// 2026-10-19  CSZ       - delete copy/move (polymorphic base)
 // ***********************************************************************************************
 // - why SafePtr
 //   . thread can ret any type data include bool

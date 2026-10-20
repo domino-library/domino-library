@@ -217,6 +217,31 @@ TEST_F(THREAD_BACK_TEST, GOLD_except_entryFN_backFN)
     EXPECT_EQ(2, step.load()) << "REQ: backFN() executed";
     EXPECT_EQ(0, threadBack_.nFut()) << "REQ: task removed after exceptions";
 }
+TEST_F(THREAD_BACK_TEST, viaMsgSelf_backFN_except_caught)
+{
+    std::atomic<int> step{0};
+    EXPECT_TRUE(threadBack_.newTaskOK(
+        [&step]
+        {
+            ++step;
+            return make_safe<bool>(true);
+        },
+        viaMsgSelf([&step](SafePtr<void> aRet)
+        {
+            EXPECT_EQ(1, step.load()) << "REQ: entryFN() executed";
+            EXPECT_NE(nullptr, aRet.get());
+            ++step;
+            throw std::runtime_error("viaMsgSelf backFN exception");
+        })
+    ));
+    while (threadBack_.hdlDoneFut() < 1)
+        timedwait();
+    EXPECT_EQ(0, threadBack_.nFut());
+    ASSERT_EQ(1u, MSG_SELF->nMsg()) << "REQ: backFN queued, not run inside hdlDoneFut";
+    MSG_SELF->handleAllMsg();  // REQ: backFN throw is caught inside the MsgCB
+    EXPECT_EQ(2, step.load()) << "REQ: backFN ran";
+    EXPECT_EQ(0u, MSG_SELF->nMsg());
+}
 TEST_F(THREAD_BACK_TEST, emptyThreadList_ok)
 {
     size_t nHandled = threadBack_.hdlDoneFut();

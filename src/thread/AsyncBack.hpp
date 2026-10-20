@@ -48,7 +48,9 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <atomic>
 #include <future>
+#include <vector>
 
 #include "ThreadBack.hpp"
 

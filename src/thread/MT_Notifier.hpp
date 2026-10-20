@@ -27,6 +27,9 @@ public:
     MT_Notifier() noexcept { sem_init(&mt_sem_, 0, 0); }
     ~MT_Notifier() noexcept { sem_destroy(&mt_sem_); }
     MT_Notifier(const MT_Notifier&) = delete;
+    MT_Notifier& operator=(const MT_Notifier&) = delete;
+    MT_Notifier(MT_Notifier&&) = delete;
+    MT_Notifier& operator=(MT_Notifier&&) = delete;
 
     void mt_notify() noexcept;
 
@@ -59,6 +62,7 @@ public:
 // 2026-03-31  CSZ       2)immune to system clock changes (pthread_cond + CLOCK_MONOTONIC)
 // 2026-04-03  CSZ       3)back semaphore (clock-immune on glibc2.30+, else not support)
 // 2026-04-11  CSZ       - fix notify loss
+// 2026-10-19  CSZ       - delete copy/move assign (sem_t must not be copied)
 // ***********************************************************************************************
 // Q&A:
 // - why semaphore instead of pthread_cond?

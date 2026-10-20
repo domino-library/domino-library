@@ -27,6 +27,9 @@
 
 #include <deque>
 #include <functional>
+#include <mutex>
+#include <typeindex>
+#include <vector>
 
 #include "MT_PingMainTH.hpp"
 #include "UniPtr.hpp"
@@ -51,6 +54,7 @@ public:
     // - shall be called in main thread ONLY!!!
     // - high performance
     [[nodiscard]] ELE_TID pop() noexcept;
+    // mismatch: leave that element and return nullptr - usr can retry than drop valuable input
     template<class aEleType> [[nodiscard]] S_PTR<aEleType> pop() noexcept;
     [[nodiscard]] size_t size(bool canBlock) const noexcept;
     void clearAll() noexcept;  // clear elements + handlers
@@ -94,6 +98,7 @@ bool MtInQueue::mt_pushOK(S_PTR<aEleType>&& aEle) noexcept
         return false;
     }
     // for MT safe: mt_pushOK shall take over aEle's content (so sender can't touch the content)
+    // - not 100% MT safe: eg usr holds SafeWeak/weak_ptr
     if (aEle.use_count() > 1)
     {
         HID("!!! push failed since use_count=" << aEle.use_count());  // ERR() is not MT safe
@@ -124,7 +129,7 @@ S_PTR<aEleType> MtInQueue::pop() noexcept
     if (ele_tid == cache_.end())
         return nullptr;
 
-    // mismatch
+    // mismatch: leave it
     if (ele_tid->second != typeid(aEleType))
         return nullptr;
 

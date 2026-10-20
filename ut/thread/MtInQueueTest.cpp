@@ -172,9 +172,27 @@ TEST_F(MtInQueueTest, popEmpty)
 }
 TEST_F(MtInQueueTest, popMismatchType)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(10))) << "REQ: push OK";
-    EXPECT_EQ(nullptr, mt_getQ().pop<void>().get()) << "REQ: pop failed since type mismatch";
-    EXPECT_EQ(1u, mt_getQ().size(true)) << "REQ: pop fail = no pop - natural";
+    struct FlagObj
+    {
+        bool& gone_;
+        explicit FlagObj(bool& aGone) : gone_(aGone) { gone_ = false; }
+        ~FlagObj() { gone_ = true; }
+    };
+    bool gone = false;
+    EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<FlagObj>(gone))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(11))) << "REQ: next ele";
+    ASSERT_FALSE(gone);
+
+    EXPECT_EQ(nullptr, mt_getQ().pop<int>().get()) << "REQ: type mismatch returns nullptr";
+    EXPECT_FALSE(gone) << "REQ: mismatch leaves that element";
+    EXPECT_EQ(2u, mt_getQ().size(true)) << "REQ: both ele remain";
+
+    {
+        auto head = mt_getQ().pop();
+        EXPECT_NE(nullptr, head.first.get()) << "REQ: untyped pop takes the mismatched head";
+    }
+    EXPECT_TRUE(gone) << "REQ: element lives until that pop drops it";
+    EXPECT_EQ(11, *mt_getQ().pop<int>().get()) << "REQ: later ele still there";
 }
 
 #define SIZE_Q
@@ -325,6 +343,7 @@ TEST_F(MtInQueueTest, handle_via_base)
 
     EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(MAKE_PTR<Base>())) << "REQ: push OK";
     EXPECT_EQ(nullptr, mt_getQ().pop<Derive>().get()) << "REQ: pop derive type is invalid";
+    EXPECT_EQ(1u, mt_getQ().size(true)) << "REQ: mismatch leaves that element";
 
     auto d = MAKE_PTR<Derive>();
     EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(move(d))) << "REQ: push OK";

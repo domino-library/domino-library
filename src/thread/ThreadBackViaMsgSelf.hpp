@@ -13,6 +13,7 @@
 //
 // - mem safe: yes
 // ***********************************************************************************************
+#pragma once
 
 #include "MsgSelf.hpp"
 #include "ObjAnywhere.hpp"
@@ -27,7 +28,11 @@ inline void cb_backFN(TaskBackFN aBackFN, const S_PTR<MsgSelf>& aMsgSelf,
 {
     if (!aMsgSelf->newMsgOK(
         [aBackFN = std::move(aBackFN),
-        ret = std::move(aRet)]() mutable noexcept { aBackFN(std::move(ret)); }, aPri)
+        ret = std::move(aRet)]() mutable noexcept
+        {
+            try { aBackFN(std::move(ret)); }
+            catch (...) { ERR("(viaMsgSelf) backFN() except=" << mt_exceptInfo()); }
+        }, aPri)
     ) {
         ERR("(viaMsgSelf) Failed to newMsgOK for aPri=" << aPri);
     }
@@ -52,4 +57,5 @@ TaskBackFN viaMsgSelf(TaskBackFN aBackFN, EMsgPriority aPri = EMsgPri_NORM) noex
 // ..........  .........   .......................................................................
 // 2023-09-15  CSZ       1)create
 // 2024-10-05  CSZ       - simpler by MSG_SELF instead of para
+// 2026-10-19  CSZ       - catch backFN() here; MsgCB itself does not throw
 // ***********************************************************************************************
