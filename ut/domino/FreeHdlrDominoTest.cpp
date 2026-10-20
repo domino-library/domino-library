@@ -204,16 +204,16 @@ TYPED_TEST_P(FreeMultiHdlrDominoTest, BugFix_noGapBetween_hdlr_and_autoRm)
 
     EXPECT_FALSE(PARA_DOM->isRepeatHdlr(e1));
     PARA_DOM->setState({{"e1", true}});
-    EXPECT_EQ(2u, MSG_SELF->nMsg()) << "req: 2 hdlrs on road";
+    EXPECT_EQ(2u, getMsgSelf()->nMsg()) << "req: 2 hdlrs on road";
 
     this->pongMsgSelf_();
     this->pongMsgSelf_();  // each process 1 low hdlr
-    EXPECT_EQ(2u, MSG_SELF->nMsg()) << "req: 3 hdlrs called that gen 2 new hdlrs";
+    EXPECT_EQ(2u, getMsgSelf()->nMsg()) << "req: 3 hdlrs called that gen 2 new hdlrs";
     EXPECT_EQ(multiset<int>({}), this->hdlrIDs_) << "1st 3 hdlrs not insert multiset but create new hdlr";
 
     this->pongMsgSelf_();
     this->pongMsgSelf_();
-    EXPECT_EQ(0u, MSG_SELF->nMsg()) << "req: all called";
+    EXPECT_EQ(0u, getMsgSelf()->nMsg()) << "req: all called";
     EXPECT_EQ(multiset<int>({1, 2}), this->hdlrIDs_) << "REQ: autoRm in time so 2 new hdlrs added succ";
 }
 
@@ -259,10 +259,10 @@ TYPED_TEST_P(FreeHdlrDominoTest, BugFix_noCrash_whenRmDom)
 {
     EXPECT_CALL(*this, h7()).Times(0);
     {
-        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());  // local; process dom stays
+        auto dom = make_ptr<TypeParam>(this->uniLogName());  // local; process dom stays
         dom->setHdlr("e1", [&](){ this->h7(); });
         dom->setState({{"e1", true}});
-        ASSERT_TRUE(MSG_SELF->nMsg());
+        ASSERT_TRUE(getMsgSelf()->nMsg());
     }  // REQ: no mem leak when rm dom with h7 in msg queue
     this->pongMsgSelf_();
 }

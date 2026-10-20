@@ -392,7 +392,7 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
                 ASSERT_EQ(1u, dom_->setState({{attrInfo.enFileDone_, true}}));
             }
         }
-        while (MSG_SELF->nMsg()) drain();
+        while (getMsgSelf()->nMsg()) drain();
     }
 
     // Stopped on master succ or master fail. Bar is the progress: succ is 100%, fail is under that.
@@ -409,11 +409,11 @@ template<class aDom> struct LoadTest : UtInitObjAnywhere
     void endDom()
     {
         // Callbacks here close over dom_. The queue must be empty before dom_ dies.
-        ASSERT_EQ(0u, MSG_SELF->nMsg());
+        ASSERT_EQ(0u, getMsgSelf()->nMsg());
         if (keepDom_) return;  // shared dom stays; cleanup_ only strips handlers
         dom_.reset();
         this->pongMsgSelf_();
-        EXPECT_EQ(0u, MSG_SELF->nMsg());  // destructor itself enqueues nothing
+        EXPECT_EQ(0u, getMsgSelf()->nMsg());  // destructor itself enqueues nothing
     }
 };
 using LoadDom = Types<MinPriDom, MaxNofreeDom, MaxDom>;

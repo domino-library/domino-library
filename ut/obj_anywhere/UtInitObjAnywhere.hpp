@@ -13,6 +13,7 @@
 
 #include "UtSoak.hpp"
 
+#include "ObjAnywhere.hpp"
 #include "AsyncBack.hpp"
 #include "DataDomino.hpp"
 #include "WbasicDatDom.hpp"
@@ -79,29 +80,29 @@ struct UtInitObjAnywhere : public UniLog, public Test
         {
             ObjAnywhere::init(*this);  // 1 ObjAnywhere in soak process since static
 
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MsgSelf>(uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MsgSelf>(uniLogName()), *this))
                 << "REQ: init MsgSelf";
 
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<Domino>         (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<Domino>         (uniLogName()), *this))
                 << "REQ: init Domino";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinDatDom>      (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinDatDom>      (uniLogName()), *this))
                 << "REQ: init MinDatDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinWbasicDatDom>(uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinWbasicDatDom>(uniLogName()), *this))
                 << "REQ: init MinWbasicDatDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinHdlrDom>     (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinHdlrDom>     (uniLogName()), *this))
                 << "REQ: init MinHdlrDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinMhdlrDom>    (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinMhdlrDom>    (uniLogName()), *this))
                 << "REQ: init MinMhdlrDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinPriDom>      (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinPriDom>      (uniLogName()), *this))
                 << "REQ: init MinPriDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinFreeDom>     (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinFreeDom>     (uniLogName()), *this))
                 << "REQ: init MinFreeDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MinRmEvDom>     (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MinRmEvDom>     (uniLogName()), *this))
                 << "REQ: init MinRmEvDom";
 
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MaxDom>         (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MaxDom>         (uniLogName()), *this))
                 << "REQ: init MaxDom";
-            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(MAKE_PTR<MaxNofreeDom>   (uniLogName()), *this))
+            EXPECT_TRUE(ObjAnywhere::emplaceObjOK(make_ptr<MaxNofreeDom>   (uniLogName()), *this))
                 << "REQ: init MaxNofreeDom";
 
             EXPECT_TRUE(ObjAnywhere::newObjOK<AsyncBack >()) << "REQ: init AsyncBack";
@@ -110,12 +111,12 @@ struct UtInitObjAnywhere : public UniLog, public Test
 
         // - example how main() callback MsgSelf to handle all msgs
         // - this lambda hides all impl details but a common interface = function<void()>
-        pongMsgSelf_ = [msgSelf = MSG_SELF]{ msgSelf->handleAllMsg(); };
+        pongMsgSelf_ = [ms = getMsgSelf()]{ ms->handleAllMsg(); };
     }
     virtual void dumpIfFail()
     {
         if (!HasFailure()) return;
-        std::cerr << "nMsg=" << (MSG_SELF ? MSG_SELF->nMsg() : 0) << '\n';
+        std::cerr << "nMsg=" << (getMsgSelf() ? getMsgSelf()->nMsg() : 0) << '\n';
     }
     virtual void cleanup_() {}
     void TearDown() override
@@ -124,8 +125,8 @@ struct UtInitObjAnywhere : public UniLog, public Test
         if (isSoak() && HasFailure()) soakReplayAndAbort();  // body fail; graph still intact
         cleanup_();  // before drain MsgSelf, so rm-ed hdlr/dom won't fire
         // rm CB still in queue, may impact low-pri (1/ping-pong)
-        if (MSG_SELF)
-            while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();  // low-pri: 1 msg per handleAllMsg
+        if (getMsgSelf())
+            while (getMsgSelf()->nMsg()) getMsgSelf()->handleAllMsg();  // low-pri: 1 msg per handleAllMsg
         dumpIfFail();
         if (isSoak() && HasFailure()) soakReplayAndAbort();
     }
@@ -159,7 +160,7 @@ void soakReuseDom_forUt(aDom& aDom_)
                 (void)aDom_.rmEvOK(en);
             rec->second.clear();  // keep capacity
         }
-        EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
+        EXPECT_EQ(0u, getMsgSelf()->nMsg()) << "REQ: no msg left to avoid CB invalid *this";
         s_noteDom_ = &aDom_;
         s_noteNames_ = &rec->second;
         Domino::newEvHook_forUt = noteNewEv_forUt;

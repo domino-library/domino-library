@@ -28,27 +28,27 @@ class DataStore
 public:
     // @brief: get a data
     // @ret: ok or nullptr
-    template<typename aDataT> [[nodiscard]] S_PTR<aDataT> get(const aDataKey& aKey) const noexcept;
+    template<typename aDataT> [[nodiscard]] SPtr<aDataT> get(const aDataKey& aKey) const noexcept;
 
     // @brief: store a new data (ie not replace but add new or rm old by aData=nullptr)
     // @ret: store ok/nok
-    [[nodiscard]] bool emplaceOK(const aDataKey& aKey, S_PTR<void> aData) noexcept;
+    [[nodiscard]] bool emplaceOK(const aDataKey& aKey, SPtr<void> aData) noexcept;
 
     // @brief: store a data (add new, replace old, or rm old by aData=nullptr)
     // @ret: store ok/nok
-    [[nodiscard]] bool replaceOK(const aDataKey& aKey, S_PTR<void> aData) noexcept;
+    [[nodiscard]] bool replaceOK(const aDataKey& aKey, SPtr<void> aData) noexcept;
 
     [[nodiscard]] size_t nData() const noexcept { return key_data_S_.size(); }
     ~DataStore() noexcept { HID("(DataStore) discard nData=" << nData()); }  // debug
 
 private:
     // -------------------------------------------------------------------------------------------
-    std::unordered_map<aDataKey, S_PTR<void>> key_data_S_;
+    std::unordered_map<aDataKey, SPtr<void>> key_data_S_;
 };
 
 // ***********************************************************************************************
 template<typename aDataKey>
-bool DataStore<aDataKey>::emplaceOK(const aDataKey& aKey, S_PTR<void> aData) noexcept
+bool DataStore<aDataKey>::emplaceOK(const aDataKey& aKey, SPtr<void> aData) noexcept
 {
     try {
         if (! aData)
@@ -75,7 +75,7 @@ bool DataStore<aDataKey>::emplaceOK(const aDataKey& aKey, S_PTR<void> aData) noe
 // ***********************************************************************************************
 template<typename aDataKey>
 template<typename aDataT>
-S_PTR<aDataT> DataStore<aDataKey>::get(const aDataKey& aKey) const noexcept
+SPtr<aDataT> DataStore<aDataKey>::get(const aDataKey& aKey) const noexcept
 {
     try {
         const auto key_data = key_data_S_.find(aKey);
@@ -84,7 +84,7 @@ S_PTR<aDataT> DataStore<aDataKey>::get(const aDataKey& aKey) const noexcept
             HID("(DataStore) can't find key=" << typeid(aDataKey).name());
             return nullptr;
         }
-        return STATIC_PTR_CAST<aDataT>(key_data->second);  // mem safe: yes SafePtr, no shared_ptr
+        return static_ptr_cast<aDataT>(key_data->second);  // mem safe: yes SafePtr, no shared_ptr
     } catch(...) {
         ERR("(DataStore) except=" << mt_exceptInfo() << ", key=" << typeid(aDataKey).name());
         return nullptr;
@@ -93,7 +93,7 @@ S_PTR<aDataT> DataStore<aDataKey>::get(const aDataKey& aKey) const noexcept
 
 // ***********************************************************************************************
 template<typename aDataKey>
-bool DataStore<aDataKey>::replaceOK(const aDataKey& aKey, S_PTR<void> aData) noexcept
+bool DataStore<aDataKey>::replaceOK(const aDataKey& aKey, SPtr<void> aData) noexcept
 {
     try {
         if (! aData)

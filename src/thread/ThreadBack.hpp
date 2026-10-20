@@ -42,8 +42,6 @@
 #include "SafePtr.hpp"
 #include "UniLog.hpp"
 
-#define THREAD_BACK  (rlib::ObjAnywhere::getObj<rlib::ThreadBack>())
-
 namespace rlib
 {
 // ***********************************************************************************************

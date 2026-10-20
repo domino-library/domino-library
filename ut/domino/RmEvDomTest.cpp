@@ -183,7 +183,7 @@ TYPED_TEST_P(RmDataDomTest, GOLD_rm_DataDom_resrc)
     };
     bool isDestructed;
 
-    EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", MAKE_PTR<TestData>(isDestructed)))
+    EXPECT_TRUE(PARA_DOM->replaceDataOK("ev", make_ptr<TestData>(isDestructed)))
         << "REQ: set data ok";
     EXPECT_FALSE(isDestructed);
 
@@ -219,7 +219,7 @@ TYPED_TEST_P(RmWdatDomTest, GOLD_rm_WdatDom_resrc)
     bool isDestructed;
 
     EXPECT_TRUE(PARA_DOM->wrCtrlOk("ev", true)) << "REQ: test wctrl data.";
-    EXPECT_TRUE(PARA_DOM->wbasic_replaceDataOK("ev", MAKE_PTR<TestData>(isDestructed)))
+    EXPECT_TRUE(PARA_DOM->wbasic_replaceDataOK("ev", make_ptr<TestData>(isDestructed)))
         << "REQ: set wr-data ok";
     EXPECT_FALSE(isDestructed);
 
@@ -253,7 +253,7 @@ TYPED_TEST_P(RmHdlrDomTest, GOLD_rm_HdlrDom_resrc)
     PARA_DOM->setHdlr("e1", [&hdlrIDs](){ hdlrIDs.insert(1); });
     PARA_DOM->setLinkedHdlr("e2", [&hdlrIDs](){ hdlrIDs.insert(2); }, "e1");
     PARA_DOM->setState({{"e1", true}});
-    EXPECT_EQ(2u, MSG_SELF->nMsg()) << "REQ: 2 hdlrs on road.";
+    EXPECT_EQ(2u, getMsgSelf()->nMsg()) << "REQ: 2 hdlrs on road.";
     EXPECT_EQ(0u, hdlrIDs.size()) << "REQ: not callback yet.";
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));
@@ -262,7 +262,7 @@ TYPED_TEST_P(RmHdlrDomTest, GOLD_rm_HdlrDom_resrc)
     EXPECT_EQ(PARA_DOM->nEvSlot(), nSlot) << "REQ: reuse a removed slot";
     PARA_DOM->forceAllHdlr("another e1");
     EXPECT_NE(Domino::D_EVENT_FAILED_RET, PARA_DOM->getEventBy("e2")) << "REQ: rm ev not impact its alias.";
-    EXPECT_EQ(3u, MSG_SELF->nMsg()) << "REQ: another e1's hdlr is on road.";
+    EXPECT_EQ(3u, getMsgSelf()->nMsg()) << "REQ: another e1's hdlr is on road.";
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("e2")) << "REQ: can rm alias Ev.";
     this->pongMsgSelf_();
@@ -365,7 +365,7 @@ TYPED_TEST_P(RmMhdlrDomTest, GOLD_rm_MhdlrDom_resrc)
     PARA_DOM->multiHdlrOnSameEv("e1", [&hdlrIDs](){ hdlrIDs.insert(2); }, "h2");
 
     PARA_DOM->setState({{"e1", true}});
-    EXPECT_EQ(2u, MSG_SELF->nMsg()) << "REQ: 2 hdlrs on road.";
+    EXPECT_EQ(2u, getMsgSelf()->nMsg()) << "REQ: 2 hdlrs on road.";
     EXPECT_EQ(0u, hdlrIDs.size()) << "REQ: not callback yet.";
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("e1"));

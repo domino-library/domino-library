@@ -237,10 +237,10 @@ TEST_F(THREAD_BACK_TEST, viaMsgSelf_backFN_except_caught)
     while (threadBack_.hdlDoneFut() < 1)
         timedwait();
     EXPECT_EQ(0, threadBack_.nFut());
-    ASSERT_EQ(1u, MSG_SELF->nMsg()) << "REQ: backFN queued, not run inside hdlDoneFut";
-    MSG_SELF->handleAllMsg();  // REQ: backFN throw is caught inside the MsgCB
+    ASSERT_EQ(1u, getMsgSelf()->nMsg()) << "REQ: backFN queued, not run inside hdlDoneFut";
+    getMsgSelf()->handleAllMsg();  // REQ: backFN throw is caught inside the MsgCB
     EXPECT_EQ(2, step.load()) << "REQ: backFN ran";
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 }
 TEST_F(THREAD_BACK_TEST, emptyThreadList_ok)
 {
@@ -287,7 +287,7 @@ TEST_F(THREAD_BACK_TEST, hdlDoneFut_wrongThread_rejected)
 }
 TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
 {
-    auto kept = MSG_SELF;
+    auto kept = getMsgSelf();
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<MsgSelf>(nullptr, *this));  // rm so viaMsgSelf sees absent
 
     EXPECT_FALSE(threadBack_.newTaskOK(
@@ -295,7 +295,7 @@ TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
         viaMsgSelf([](SafePtr<void>) {})  // invalid since msgSelf==nullptr
     ));
 
-    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(kept, *this)) << "REQ: valid MSG_SELF";
+    EXPECT_TRUE(ObjAnywhere::emplaceObjOK(kept, *this)) << "REQ: valid getMsgSelf()";
     EXPECT_FALSE(threadBack_.newTaskOK(
         [] { return make_safe<bool>(true); },  // entryFn
         viaMsgSelf(nullptr)  // invalid since backFn==nullptr
@@ -318,7 +318,7 @@ TEST_F(THREAD_BACK_TEST, viaMsgSelf_invalidPri_newMsgOK_fails_noCrash)
     while (threadBack_.hdlDoneFut() == 0)
         timedwait();
 
-    EXPECT_EQ(0u, MSG_SELF->nMsg()) << "REQ: invalid pri not queued; no crash";
+    EXPECT_EQ(0u, getMsgSelf()->nMsg()) << "REQ: invalid pri not queued; no crash";
 }
 // - REQ: mt_getMainTH() returns the process's ONE logical main = the 1st caller; a later call from
 //        ANY other thread still returns that SAME main id (the worker does NOT become main).
@@ -356,7 +356,7 @@ TEST_F(THREAD_BACK_TEST, reqMainTH_trueInMain_falseInOtherThread)
 TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simulate real world
 {
     std::set<std::string> cb_info;
-    auto ms = MSG_SELF;  // same obj viaMsgSelf uses
+    auto ms = getMsgSelf();  // same obj viaMsgSelf uses
 
     // setup msg handler table for mt_getQ()
     EXPECT_EQ(0u, mt_getQ().nHdlr())  << "REQ: init no hdlr";
@@ -365,7 +365,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
         EXPECT_TRUE(ms->newMsgOK(  // REQ: via MsgSelf
             [aMsg, &cb_info]
             {
-                EXPECT_EQ("a", *(STATIC_PTR_CAST<std::string>(aMsg).get()));
+                EXPECT_EQ("a", *(static_ptr_cast<std::string>(aMsg).get()));
                 cb_info.emplace("REQ: a's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
@@ -376,7 +376,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
         EXPECT_TRUE(ms->newMsgOK(
             [aMsg, &cb_info]
             {
-                EXPECT_EQ(2, *(STATIC_PTR_CAST<int>(aMsg).get()));
+                EXPECT_EQ(2, *(static_ptr_cast<int>(aMsg).get()));
                 cb_info.emplace("REQ: 2's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
@@ -387,7 +387,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<std::string>("a"))) << "REQ: push OK";
+            EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<std::string>("a"))) << "REQ: push OK";
             return make_safe<bool>(true);
         },
         // backFn
@@ -402,7 +402,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<int>(2))) << "REQ: push OK";
+            EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<int>(2))) << "REQ: push OK";
             return make_safe<bool>(true);
         },
         // backFn

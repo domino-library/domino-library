@@ -53,8 +53,8 @@ struct MtInQueueTest : public Test, public UniLog
 // ***********************************************************************************************
 TEST_F(MtInQueueTest, GOLD_simple_fifo)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(2)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(2)));
     EXPECT_EQ(1, *(mt_getQ().pop<int>().get())) << "REQ: fifo";
     EXPECT_EQ(2, *(mt_getQ().pop<int>().get())) << "REQ: fifo";
 }
@@ -65,7 +65,7 @@ TEST_F(MtInQueueTest, GOLD_sparsePush_fifo)
     {
         for (int i = 0; i < nMsg; i++)
         {
-            if (!mt_getQ().mt_pushOK(MAKE_PTR<int>(i)))
+            if (!mt_getQ().mt_pushOK(make_ptr<int>(i)))
             {
                 ADD_FAILURE() << "REQ: push OK";
                 return;
@@ -100,7 +100,7 @@ TEST_F(MtInQueueTest, GOLD_surgePush_fifo)
     {
         for (int i = 0; i < nMsg; i++)
         {
-            if (!mt_getQ().mt_pushOK(MAKE_PTR<int>(i)))  // surge push
+            if (!mt_getQ().mt_pushOK(make_ptr<int>(i)))  // surge push
             {
                 ADD_FAILURE() << "REQ: push OK";
                 return;
@@ -127,8 +127,8 @@ TEST_F(MtInQueueTest, GOLD_surgePush_fifo)
 // ***********************************************************************************************
 TEST_F(MtInQueueTest, pushWakeup_popNoBlockAndWakeup)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<string>("1st"))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<string>("2nd"))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<string>("1st"))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<string>("2nd"))) << "REQ: push OK";
     {
         auto guard = mt_getQ().lockBackdoor();
         timedwait(600);  // REQ: not blocked 10min but waked by prev push
@@ -146,12 +146,12 @@ TEST_F(MtInQueueTest, pushWakeup_popNoBlockAndWakeup)
 TEST_F(MtInQueueTest, push_null_NOK)
 {
     EXPECT_FALSE(mt_getQ().mt_pushOK<void>(nullptr)) << "REQ: push NOK";
-    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(S_PTR<int>())) << "REQ: push null int NOK";
+    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(SPtr<int>())) << "REQ: push null int NOK";
     EXPECT_EQ(0, mt_getQ().size(true)) << "REQ: can't push nullptr since pop empty will ret nullptr";
 }
 TEST_F(MtInQueueTest, push_takeover_toEnsureMtSafe)
 {
-    auto ele = MAKE_PTR<int>(1);
+    auto ele = make_ptr<int>(1);
     auto e2  = ele;
     EXPECT_FALSE(mt_getQ().mt_pushOK<int>(move(ele))) << "REQ: push failed since can't takeover ele";
     EXPECT_EQ(0, mt_getQ().size(true)) << "REQ: push failed since can't takeover ele";
@@ -179,8 +179,8 @@ TEST_F(MtInQueueTest, popMismatchType)
         ~FlagObj() { gone_ = true; }
     };
     bool gone = false;
-    EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<FlagObj>(gone))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(11))) << "REQ: next ele";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<FlagObj>(gone))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(11))) << "REQ: next ele";
     ASSERT_FALSE(gone);
 
     EXPECT_EQ(nullptr, mt_getQ().pop<int>().get()) << "REQ: type mismatch returns nullptr";
@@ -202,7 +202,7 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
     ASSERT_EQ(0u, mt_getQ().size(true )) << "REQ: blocked init";
     ASSERT_EQ(0u, mt_getQ().size(false)) << "REQ: unblocked init";
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
     ASSERT_EQ(1u, mt_getQ().size(true )) << "REQ: inc blocked size";
     ASSERT_EQ(1u, mt_getQ().size(false)) << "REQ: inc unblocked size";
 
@@ -211,12 +211,12 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
         ASSERT_EQ(0u, mt_getQ().size(false)) << "REQ: sizeQ can be unblocked (blocked will hang)";
     }
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(2))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(2))) << "REQ: push OK";
     EXPECT_EQ(1, *mt_getQ().pop<int>().get());
     ASSERT_EQ(1u, mt_getQ().size(true )) << "REQ: dec blocked size";
     ASSERT_EQ(1u, mt_getQ().size(false)) << "REQ: dec unblocked size";
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(3))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(3))) << "REQ: push OK";
     ASSERT_EQ(2u, mt_getQ().size(true )) << "REQ: re-inc blocked size (now 1 in cache_, 1 in queue)";
     ASSERT_EQ(2u, mt_getQ().size(false)) << "REQ: re-inc unblocked size";
 
@@ -227,10 +227,10 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
 }
 TEST_F(MtInQueueTest, mainThread_boundaries_wrongThread_rejected)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1)));
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(2)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(2)));
     EXPECT_EQ(1, *mt_getQ().pop<int>().get());  // 1 in cache_
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(3)));  // 1 in mt_queue_
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(3)));  // 1 in mt_queue_
     EXPECT_TRUE(mt_getQ().setHdlrOK<int>([](UniPtr){}));
 
     size_t wrongThreadSize = size_t(-1);
@@ -262,7 +262,7 @@ struct TestObj
 TEST_F(MtInQueueTest, destruct_right_type)
 {
     bool isDestructed;
-    EXPECT_TRUE(mt_getQ().mt_pushOK(MAKE_PTR<TestObj>(isDestructed))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<TestObj>(isDestructed))) << "REQ: push OK";
     ASSERT_FALSE(isDestructed);
 
     mt_getQ().clearAll();
@@ -270,11 +270,11 @@ TEST_F(MtInQueueTest, destruct_right_type)
 }
 TEST_F(MtInQueueTest, clear_queue_cache_hdlr)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(2))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(2))) << "REQ: push OK";
     auto popped = mt_getQ().pop();
     EXPECT_NE(nullptr, popped.first.get()) << "REQ: pop from cache";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(3))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(3))) << "REQ: push OK";
 
     {
         auto guard = mt_getQ().lockBackdoor();
@@ -292,7 +292,7 @@ TEST_F(MtInQueueTest, clear_queue_cache_hdlr)
 TEST_F(MtInQueueTest, cov_destructor)
 {
     MtInQueue mtQ;  // cov destructor with ele left
-    EXPECT_TRUE(mtQ.mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mtQ.mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
 
     MtInQueue mtQ2;  // cov destructor without ele left
 }
@@ -305,11 +305,11 @@ TEST_F(MtInQueueTest, GOLD_handle_bothCacheAndQueue_ifPossible_withoutBlocked)
     // init
     size_t nCalled = 0;
     EXPECT_TRUE(mt_getQ().setHdlrOK<int>([&nCalled](UniPtr){ ++nCalled; })) << "REQ: set hdlr";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
     auto popped = mt_getQ().pop();  // still 1 ele in cache_
     EXPECT_NE(nullptr, popped.first.get()) << "REQ: pop from cache";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";  // and 1 ele in queue_
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";  // and 1 ele in queue_
     EXPECT_EQ(2u, mt_getQ().size(true));
 
     {
@@ -339,20 +339,20 @@ TEST_F(MtInQueueTest, handle_via_base)
 {
     struct Base { virtual int value() { return 1; } };
     struct Derive : public Base { int value() override { return 2; } };
-    // mt_getQ().mt_pushOK<Derive>(MAKE_PTR<Base>());  // REQ: build err to push Base to Derive
+    // mt_getQ().mt_pushOK<Derive>(make_ptr<Base>());  // REQ: build err to push Base to Derive
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(MAKE_PTR<Base>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(make_ptr<Base>())) << "REQ: push OK";
     EXPECT_EQ(nullptr, mt_getQ().pop<Derive>().get()) << "REQ: pop derive type is invalid";
     EXPECT_EQ(1u, mt_getQ().size(true)) << "REQ: mismatch leaves that element";
 
-    auto d = MAKE_PTR<Derive>();
+    auto d = make_ptr<Derive>();
     EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(move(d))) << "REQ: push OK";
     EXPECT_EQ(2u, mt_getQ().size(true)) << "REQ: can push Derive to Base";
 
     int exp = 1;
     EXPECT_TRUE(mt_getQ().setHdlrOK<Base>([&exp](UniPtr aEle)
     {
-        auto ele = STATIC_PTR_CAST<Base>(aEle);
+        auto ele = static_ptr_cast<Base>(aEle);
         EXPECT_NE(nullptr, ele.get());
         EXPECT_EQ(exp++, ele.get()->value());
     }));
@@ -361,7 +361,7 @@ TEST_F(MtInQueueTest, handle_via_base)
 }
 TEST_F(MtInQueueTest, noHdlrEle_discard)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>(1))) << "REQ: push OK";
     EXPECT_EQ(1u, mt_getQ().size(true));
 
     mt_getQ().handleAllEle();
@@ -375,8 +375,8 @@ TEST_F(MtInQueueTest, hdlr_except)
         ++step;
         throw runtime_error("MtQ hdlr except");
     })) << "REQ: set hdlr";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>())) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(MAKE_PTR<int>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_ptr<int>())) << "REQ: push OK";
     EXPECT_EQ(2u, mt_getQ().handleAllEle()) << "REQ: handled 2 elements";
     EXPECT_EQ(2, step) << "REQ: hdlr called";
 }

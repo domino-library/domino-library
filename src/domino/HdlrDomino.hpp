@@ -27,7 +27,6 @@
 
 #include "Domino.hpp"
 #include "MsgSelf.hpp"
-#include "ObjAnywhere.hpp"
 
 namespace rlib
 {
@@ -37,7 +36,7 @@ class HdlrDomino : public aDominoType
 {
 public:
     explicit HdlrDomino(const LogName& aUniLogName = ULN_DEFAULT);
-    [[nodiscard]] bool setMsgSelfOK(const S_PTR<MsgSelf>& aMsgSelf) noexcept;  // replace default; safe: yes SafePtr, no shared_ptr
+    [[nodiscard]] bool setMsgSelfOK(const SPtr<MsgSelf>& aMsgSelf) noexcept;  // replace default; safe: yes SafePtr, no shared_ptr
 
     Domino::Event setHdlr(const Domino::EvName&, MsgCB aHdlr) noexcept;
     [[nodiscard]] bool rmOneHdlrOK(const Domino::EvName&) noexcept;  // rm by EvName
@@ -73,7 +72,7 @@ private:
     // - nEv/nHdlr >> 10
     std::vector<SharedMsgCB> ev_hdlr_S_;  // [event]=hdlr; null=no hdlr
 protected:
-    S_PTR<MsgSelf> msgSelf_ = ObjAnywhere::getObj<MsgSelf>();
+    SPtr<MsgSelf> msgSelf_ = getMsgSelf();
 public:
     using aDominoType::oneLog;
 };
@@ -216,7 +215,7 @@ Domino::Event HdlrDomino<aDominoType>::setHdlr(const Domino::EvName& aEvName, Ms
     }
 
     // set
-    auto newHdlr = MAKE_PTR<MsgCB>(std::move(aHdlr));
+    auto newHdlr = make_ptr<MsgCB>(std::move(aHdlr));
     if (newEv >= ev_hdlr_S_.size())
         ev_hdlr_S_.resize(newEv + 1);
     ev_hdlr_S_[newEv] = newHdlr;
@@ -233,7 +232,7 @@ Domino::Event HdlrDomino<aDominoType>::setHdlr(const Domino::EvName& aEvName, Ms
 
 // ***********************************************************************************************
 template<class aDominoType>
-bool HdlrDomino<aDominoType>::setMsgSelfOK(const S_PTR<MsgSelf>& aMsgSelf) noexcept
+bool HdlrDomino<aDominoType>::setMsgSelfOK(const SPtr<MsgSelf>& aMsgSelf) noexcept
 {
     // validate
     // The constructor and this setter guarantee msgSelf_ is never null.

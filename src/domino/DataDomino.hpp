@@ -36,34 +36,34 @@ public:
     // - if aEvName invalid, return null
     // - not template<aDataType> so can virtual for WrDatDom
     // . & let DataDomino has little idea of read-write ctrl, simpler
-    [[nodiscard]] virtual S_PTR<void> getData(const Domino::EvName&) const noexcept;
+    [[nodiscard]] virtual SPtr<void> getData(const Domino::EvName&) const noexcept;
 
     // -------------------------------------------------------------------------------------------
     // - replace old data by new=aData if old != new
     // - for aDataType w/o default constructor!!!
     // - ret true=succ, false=fail
-    [[nodiscard]] virtual bool replaceDataOK(const Domino::EvName&, S_PTR<void> = nullptr) noexcept;
+    [[nodiscard]] virtual bool replaceDataOK(const Domino::EvName&, SPtr<void> = nullptr) noexcept;
 
 protected:
     void rmEv_(Domino::Event aValidEv) noexcept override;
-    S_PTR<void> getData_(Domino::Event aEv) const noexcept { return ev_data_S_.get<void>(aEv); }
-    bool replaceDataOK_(Domino::Event aEv, S_PTR<void> aData) noexcept { return ev_data_S_.replaceOK(aEv, std::move(aData)); }
+    SPtr<void> getData_(Domino::Event aEv) const noexcept { return ev_data_S_.get<void>(aEv); }
+    bool replaceDataOK_(Domino::Event aEv, SPtr<void> aData) noexcept { return ev_data_S_.replaceOK(aEv, std::move(aData)); }
 
 private:
     // -------------------------------------------------------------------------------------------
-    DataStore<Domino::Event> ev_data_S_;  // [event]=S_PTR<void>
+    DataStore<Domino::Event> ev_data_S_;  // [event]=SPtr<void>
 };
 
 // ***********************************************************************************************
 template<typename aDominoType>
-S_PTR<void> DataDomino<aDominoType>::getData(const Domino::EvName& aEvName) const noexcept
+SPtr<void> DataDomino<aDominoType>::getData(const Domino::EvName& aEvName) const noexcept
 {
     return ev_data_S_.get<void>(this->getEventBy(aEvName));
 }
 
 // ***********************************************************************************************
 template<typename aDominoType>
-bool DataDomino<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, S_PTR<void> aData) noexcept
+bool DataDomino<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, SPtr<void> aData) noexcept
 {
     if (!aData && this->getEventBy(aEvName) == Domino::D_EVENT_FAILED_RET)
         return false;  // nothing to remove; do not create the name
@@ -84,16 +84,16 @@ void DataDomino<aDominoType>::rmEv_(Domino::Event aValidEv) noexcept
 // - this getData() cast type so convenient
 // - SafePtr is safe, while shared_ptr maybe NOT
 template<typename aDataDominoType, typename aDataType>
-[[nodiscard]] S_PTR<aDataType> getData(aDataDominoType& aDom, const Domino::EvName& aEvName) noexcept
+[[nodiscard]] SPtr<aDataType> getData(aDataDominoType& aDom, const Domino::EvName& aEvName) noexcept
 {
-    return STATIC_PTR_CAST<aDataType>(aDom.getData(aEvName));
+    return static_ptr_cast<aDataType>(aDom.getData(aEvName));
 }
 
 // ***********************************************************************************************
 template<typename aDataDominoType, typename aDataType>
 [[nodiscard]] bool setValueOK(aDataDominoType& aDom, const Domino::EvName& aEvName, const aDataType& aData) noexcept
 {
-    return aDom.replaceDataOK(aEvName, MAKE_PTR<aDataType>(aData));
+    return aDom.replaceDataOK(aEvName, make_ptr<aDataType>(aData));
 }
 }  // namespace
 // ***********************************************************************************************

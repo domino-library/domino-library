@@ -95,7 +95,7 @@ Domino::Event MultiHdlrDomino<aDominoType>::multiHdlrOnSameEv(const Domino::EvNa
     }
 
     // set hdlr
-    auto&& newHdlr = MAKE_PTR<MsgCB>(std::move(aHdlr));
+    auto&& newHdlr = make_ptr<MsgCB>(std::move(aHdlr));
     auto&& ev = this->newEvent(aEvName);
 
     auto [ev_hdlrs, _] = ev_hdlrs_S_.try_emplace(ev);

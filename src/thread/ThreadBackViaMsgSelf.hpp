@@ -16,14 +16,13 @@
 #pragma once
 
 #include "MsgSelf.hpp"
-#include "ObjAnywhere.hpp"
 #include "ThreadBack.hpp"
 
 namespace rlib
 {
 // ***********************************************************************************************
 // - deferred by MsgSelf: aBackFN runs in main thread via MsgSelf queue, not directly
-inline void cb_backFN(TaskBackFN aBackFN, const S_PTR<MsgSelf>& aMsgSelf,
+inline void cb_backFN(TaskBackFN aBackFN, const SPtr<MsgSelf>& aMsgSelf,
     EMsgPriority aPri, SafePtr<void> aRet) noexcept
 {
     if (!aMsgSelf->newMsgOK(
@@ -42,12 +41,12 @@ inline void cb_backFN(TaskBackFN aBackFN, const S_PTR<MsgSelf>& aMsgSelf,
 [[nodiscard]] inline
 TaskBackFN viaMsgSelf(TaskBackFN aBackFN, EMsgPriority aPri = EMsgPri_NORM) noexcept
 {
-    auto&& msgSelf = MSG_SELF;
-    return ! aBackFN || msgSelf.get() == nullptr
+    auto ms = getMsgSelf();
+    return ! aBackFN || ! ms
         ? TaskBackFN()  // empty fn
-        : [aBackFN = std::move(aBackFN), msgSelf, aPri](SafePtr<void> aRet) mutable noexcept
+        : [aBackFN = std::move(aBackFN), ms, aPri](SafePtr<void> aRet) mutable noexcept
         {
-            cb_backFN(std::move(aBackFN), msgSelf, aPri, std::move(aRet));  // not exe here
+            cb_backFN(std::move(aBackFN), ms, aPri, std::move(aRet));  // not exe here
         };
 }
 

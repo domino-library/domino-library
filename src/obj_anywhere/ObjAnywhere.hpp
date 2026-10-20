@@ -42,9 +42,9 @@ public:
     // @param SafePtr<aObjType>: an obj to be stored
     // @param UniLog           : log
     // @param ObjName          : key of the obj; default is typeid(aObjType).name()
-    template<typename aObjType> [[nodiscard]] static bool emplaceObjOK(S_PTR<aObjType>,
+    template<typename aObjType> [[nodiscard]] static bool emplaceObjOK(SPtr<aObjType>,
         UniLog&, const ObjName&) noexcept;
-    template<typename aObjType> [[nodiscard]] static bool emplaceObjOK(S_PTR<aObjType> aObj,
+    template<typename aObjType> [[nodiscard]] static bool emplaceObjOK(SPtr<aObjType> aObj,
         UniLog& oneLog = UniLog::defaultUniLog_) noexcept
     {
         return emplaceObjOK<aObjType>(std::move(aObj), oneLog, defaultObjName<aObjType>());
@@ -52,19 +52,19 @@ public:
     // @brief: construct aObjType in-place (perfect-forward ctor args) then store by default name
     // @param Args: forwarded to aObjType's constructor (like std::map::emplace / make_shared)
     // @ret: ok or fail (eg !isInit() or default-name already used)
-    // - separate name (vs emplaceObjOK) to avoid overload ambiguity with the S_PTR overloads
+    // - separate name (vs emplaceObjOK) to avoid overload ambiguity with the SPtr overloads
     template<typename aObjType, typename... Args> [[nodiscard]] static bool newObjOK(Args&&... aArgs) noexcept
     {
-        return emplaceObjOK<aObjType>(MAKE_PTR<aObjType>(std::forward<Args>(aArgs)...));
+        return emplaceObjOK<aObjType>(make_ptr<aObjType>(std::forward<Args>(aArgs)...));
     }
 
     // @brief: get an obj
     // @param ObjName: key of the obj when stored; default is typeid(aObjType).name()
     // @ret: ok or nullptr
     template<typename aObjType> [[nodiscard]] static
-    S_PTR<aObjType> getObj(const ObjName&) noexcept;
+    SPtr<aObjType> getObj(const ObjName&) noexcept;
     template<typename aObjType> [[nodiscard]] static
-    S_PTR<aObjType> getObj() noexcept
+    SPtr<aObjType> getObj() noexcept
     {
         return getObj<aObjType>(defaultObjName<aObjType>());
     }
@@ -84,7 +84,7 @@ private:
 
 // ***********************************************************************************************
 template<typename aObjType>
-S_PTR<aObjType> ObjAnywhere::getObj(const ObjName& aObjName) noexcept
+SPtr<aObjType> ObjAnywhere::getObj(const ObjName& aObjName) noexcept
 {
     if (aObjName.empty())
     {
@@ -98,7 +98,7 @@ S_PTR<aObjType> ObjAnywhere::getObj(const ObjName& aObjName) noexcept
 
 // ***********************************************************************************************
 template<typename aObjType>
-bool ObjAnywhere::emplaceObjOK(S_PTR<aObjType> aObj, UniLog& oneLog, const ObjName& aObjName) noexcept
+bool ObjAnywhere::emplaceObjOK(SPtr<aObjType> aObj, UniLog& oneLog, const ObjName& aObjName) noexcept
 {
     if (aObjName.empty())
     {

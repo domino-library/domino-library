@@ -227,7 +227,7 @@ TYPED_TEST_P(HdlrDominoTest, setLinkedHdlr_selfLoop_failure_is_atomic)
         << "REQ: failed setLinkedHdlr() leaves no event";
     EXPECT_EQ(0u, PARA_DOM->nHdlr("same"))
         << "REQ: failed setLinkedHdlr() leaves no handler";
-    EXPECT_EQ(0u, MSG_SELF->nMsg())
+    EXPECT_EQ(0u, getMsgSelf()->nMsg())
         << "REQ: failed setLinkedHdlr() leaves no callback";
 }
 TYPED_TEST_P(HdlrDominoTest, BugFix_invalidHdlr_noCrash)
@@ -282,7 +282,7 @@ TYPED_TEST_P(HdlrDominoTest, rmHdlrOnRoad_noCallback)
     PARA_DOM->setLinkedHdlr("e0", this->hdlr0_, "e");
     PARA_DOM->setLinkedHdlr("e1", this->hdlr1_, "e");
     PARA_DOM->setState({{"e", true}});  // cb on road
-    EXPECT_TRUE(MSG_SELF->nMsg());
+    EXPECT_TRUE(getMsgSelf()->nMsg());
     EXPECT_TRUE(PARA_DOM->rmOneHdlrOK("e0")) << "REQ: rm hdlr on-road";
 
     EXPECT_CALL(*this, hdlr0()).Times(0);
@@ -315,7 +315,7 @@ TYPED_TEST_P(HdlrDominoTest, rmAllHdlrOnRoad_noCallback)
     PARA_DOM->setHdlr("e0", this->hdlr0_);
     PARA_DOM->setLinkedHdlr("e1", this->hdlr1_, "e");
     PARA_DOM->setState({{"e0", true}, {"e", true}});  // cb on road
-    EXPECT_TRUE(MSG_SELF->nMsg());
+    EXPECT_TRUE(getMsgSelf()->nMsg());
     PARA_DOM->rmAllHdlr();
 
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: rm hdlr on-road
@@ -356,11 +356,11 @@ TYPED_TEST_P(NofreeHdlrDominoTest, rmHdlrOnRoad_thenReAdd_noCallbackUntilReTrigg
 {
     PARA_DOM->setHdlr("event", this->hdlr0_);
     PARA_DOM->setState({{"event", true}});
-    EXPECT_EQ(1U, MSG_SELF->nMsg(EMsgPri_NORM));  // 1 cb on road
+    EXPECT_EQ(1U, getMsgSelf()->nMsg(EMsgPri_NORM));  // 1 cb on road
 
     PARA_DOM->setState({{"event", false}});
     PARA_DOM->setState({{"event", true}});
-    EXPECT_EQ(2U, MSG_SELF->nMsg(EMsgPri_NORM));  // 2 cb on road
+    EXPECT_EQ(2U, getMsgSelf()->nMsg(EMsgPri_NORM));  // 2 cb on road
 
     EXPECT_TRUE(PARA_DOM->rmOneHdlrOK("event")) << "REQ: rm hdlr include all on-road";
 
@@ -371,17 +371,17 @@ TYPED_TEST_P(NofreeHdlrDominoTest, rmHdlrOnRoad_thenReAdd_noCallbackUntilReTrigg
     this->pongMsgSelf_();
 
     PARA_DOM->setState({{"event", true}});
-    ASSERT_TRUE(MSG_SELF->nMsg());
+    ASSERT_TRUE(getMsgSelf()->nMsg());
     EXPECT_CALL(*this, hdlr0());  // REQ: new cb
     this->pongMsgSelf_();
 }
 TYPED_TEST_P(NofreeHdlrDominoTest, hdlrOnRoad_thenRmDom_noCrash_noLeak)
 {
     {
-        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());  // local; process dom stays
+        auto dom = make_ptr<TypeParam>(this->uniLogName());  // local; process dom stays
         dom->setHdlr("event", this->hdlr0_);
         dom->setState({{"event", true}});
-        EXPECT_EQ(1U, MSG_SELF->nMsg(EMsgPri_NORM));  // 1 cb on road
+        EXPECT_EQ(1U, getMsgSelf()->nMsg(EMsgPri_NORM));  // 1 cb on road
     }  // REQ: rm dom
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: no cb
     this->pongMsgSelf_();
@@ -447,7 +447,7 @@ TYPED_TEST_P(NofreeHdlrDominoTest, lateRegister_immediateThenReTrigger)
 TYPED_TEST_P(HdlrDominoTest, force_call_invalidEv)
 {
     PARA_DOM->forceAllHdlr("invalid ev");
-    EXPECT_EQ(0, MSG_SELF->nMsg()) << "inc code cov";
+    EXPECT_EQ(0, getMsgSelf()->nMsg()) << "inc code cov";
 }
 
 #define N_HDLR
@@ -510,17 +510,17 @@ TYPED_TEST_P(HdlrDominoTest, replace_msgSelf)  // checked by CI valgrind
 
     PARA_DOM->setHdlr("event", this->hdlr0_);
     PARA_DOM->setState({{"event", true}});  // 1 msg in old msgSelf
-    auto newMsgSelf = MAKE_PTR<MsgSelf>(this->uniLogName());
+    auto newMsgSelf = make_ptr<MsgSelf>(this->uniLogName());
     ASSERT_FALSE(PARA_DOM->setMsgSelfOK(newMsgSelf)) << "REQ: can NOT set new msgSelf when unhandled msg in old";
 
     EXPECT_CALL(*this, hdlr0());  // drain old queue fires the pending hdlr
     this->pongMsgSelf_();
     ASSERT_TRUE(PARA_DOM->setMsgSelfOK(newMsgSelf)) << "REQ: can set new msgSelf";
-    EXPECT_TRUE(PARA_DOM->setMsgSelfOK(MSG_SELF));  // restore process MsgSelf for soak test
+    EXPECT_TRUE(PARA_DOM->setMsgSelfOK(getMsgSelf()));  // restore process MsgSelf for soak test
 }
 TYPED_TEST_P(HdlrDominoTest, bugFix_invalidMsgSelf)  // checked by CI valgrind
 {
-    auto kept = MSG_SELF;
+    auto kept = getMsgSelf();
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<MsgSelf>(nullptr, *this));  // rm MsgSelf from ObjAnywhere
     EXPECT_THROW(TypeParam(), std::runtime_error) << "REQ: TypeParam() shall throw when MsgSelf absent";
 
@@ -537,21 +537,21 @@ struct HasRepeatedHdlr<aT, std::void_t<decltype(std::declval<aT&>().repeatedHdlr
 // local DOM: the process-lifetime PARA DOM must not be destroyed
 TYPED_TEST_P(HdlrDominoTest, queuedHdlr_thenRmDom_noCallback)
 {
-    auto dom = MAKE_PTR<TypeParam>(this->uniLogName());
+    auto dom = make_ptr<TypeParam>(this->uniLogName());
     int ran = 0;
     dom->setHdlr("e", [&ran]{ ++ran; });
     dom->setState({{"e", true}});
-    ASSERT_EQ(1u, MSG_SELF->nMsg());
+    ASSERT_EQ(1u, getMsgSelf()->nMsg());
 
     dom = nullptr;
-    while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();
+    while (getMsgSelf()->nMsg()) getMsgSelf()->handleAllMsg();
     EXPECT_EQ(0, ran);
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 }
 TYPED_TEST_P(HdlrDominoTest, hdlr_destroysDom_returnAndThrow)
 {
     auto run = [this](bool doThrow, bool repeated) {
-        auto dom = MAKE_PTR<TypeParam>(this->uniLogName());
+        auto dom = make_ptr<TypeParam>(this->uniLogName());
         int ran = 0;
         if constexpr (HasRepeatedHdlr<TypeParam>::value) {
             if (repeated) dom->repeatedHdlr("e");  // base cb_hdlr_; else FreeHdlrDomino::cb_hdlr_
@@ -564,8 +564,8 @@ TYPED_TEST_P(HdlrDominoTest, hdlr_destroysDom_returnAndThrow)
             if (doThrow) throw std::runtime_error("die");
         });
         dom->setState({{"e", true}});
-        EXPECT_EQ(1u, MSG_SELF->nMsg());
-        while (MSG_SELF->nMsg()) MSG_SELF->handleAllMsg();
+        EXPECT_EQ(1u, getMsgSelf()->nMsg());
+        while (getMsgSelf()->nMsg()) getMsgSelf()->handleAllMsg();
         EXPECT_EQ(1, ran);
         EXPECT_FALSE(dom);
     };

@@ -158,7 +158,7 @@ TYPED_TEST_P(MultiHdlrDominoTest, newChain_dupSatisfy_callbackOnce)
 
     PARA_DOM->setState({{"prev", true}});
     PARA_DOM->setPrev("event", {{"prev", true}});  // 2nd satisfy
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 }
 TYPED_TEST_P(MultiHdlrDominoTest, chain_sameHdlrOnDiffEvent_callbackEach)
 {
@@ -187,14 +187,14 @@ TYPED_TEST_P(MultiHdlrDominoTest, multiPrev_onlyAllSatisfy_thenCallback)
     PARA_DOM->multiHdlrOnSameEv("event1", this->hdlr0_, "hn0_2");
     PARA_DOM->setPrev("event1", {{"prev1", true}});
     PARA_DOM->setPrev("event1", {{"prev2", false}});
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 
     PARA_DOM->setHdlr("event2", this->hdlr1_);
     PARA_DOM->multiHdlrOnSameEv("event2", this->hdlr1_, "hn1_1");
     PARA_DOM->multiHdlrOnSameEv("event2", this->hdlr1_, "hn1_2");
     PARA_DOM->setPrev("event2", {{"prev1", true}});
     PARA_DOM->setPrev("event2", {{"prev2", true}});
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 
     PARA_DOM->setState({{"prev1", true}, {"prev2", true}});
     this->pongMsgSelf_();
@@ -264,7 +264,7 @@ TYPED_TEST_P(MultiHdlrDominoTest, rmHdlr_allEv_onRoad)
     PARA_DOM->setHdlr("e0", this->hdlr0_);
     PARA_DOM->multiHdlrOnSameEv("e0", this->hdlr1_, "this->hdlr1_");
     PARA_DOM->setState({{"e0", true}});  // 2 cb on road
-    EXPECT_TRUE(MSG_SELF->nMsg());
+    EXPECT_TRUE(getMsgSelf()->nMsg());
     PARA_DOM->rmAllHdlr();
 
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: rm hdlr on-road
@@ -316,7 +316,7 @@ TYPED_TEST_P(NofreeMultiHdlrDominoTest, rmHdlrOnRoad)
     PARA_DOM->multiHdlrOnSameEv("event", this->hdlr1_, "this->hdlr1_");
     PARA_DOM->multiHdlrOnSameEv("event", this->hdlr2_, "this->hdlr2_");
     PARA_DOM->setState({{"event", true}});  // 3 cb on road
-    EXPECT_TRUE(MSG_SELF->nMsg());
+    EXPECT_TRUE(getMsgSelf()->nMsg());
     EXPECT_TRUE(PARA_DOM->rmOneHdlrOK("event")) << "REQ: invalidate HdlrDom";
     EXPECT_TRUE(PARA_DOM->rmOneHdlrOK("event", "this->hdlr2_")) << "REQ: invalidate MultiDom";
 
@@ -356,7 +356,7 @@ TYPED_TEST_P(MultiHdlrDominoTest, GOLD_force_call)
     EXPECT_CALL(*this, hdlr0()).Times(0);  // req: no call
     EXPECT_CALL(*this, hdlr1()).Times(0);  // req: no call
     PARA_DOM->forceAllHdlr("e1");
-    EXPECT_EQ(0u, MSG_SELF->nMsg());
+    EXPECT_EQ(0u, getMsgSelf()->nMsg());
 
     PARA_DOM->setHdlr("e1", this->hdlr0_);
     PARA_DOM->multiHdlrOnSameEv("e1", this->hdlr1_, "this->hdlr1_");

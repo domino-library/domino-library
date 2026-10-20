@@ -45,9 +45,8 @@
 #include <deque>
 #include <functional>
 
+#include "ObjAnywhere.hpp"
 #include "UniPtr.hpp"
-
-#define MSG_SELF (ObjAnywhere::getObj<MsgSelf>())
 
 namespace rlib
 {
@@ -67,8 +66,8 @@ enum EMsgPriority : unsigned char
 // - MsgCB can try-catch all exception
 // - exception is bug to be fixed than pretected
 using MsgCB        = std::function<void()>;
-using WeakMsgCB    = W_PTR<MsgCB>;
-using SharedMsgCB  = S_PTR<MsgCB>;
+using WeakMsgCB    = WPtr<MsgCB>;
+using SharedMsgCB  = SPtr<MsgCB>;
 
 // ***********************************************************************************************
 class MsgSelf : public UniLog
@@ -98,6 +97,9 @@ private:
     size_t nMsg_ = 0;
     bool inHandle_ = false;  // handleAllMsg() in progress; refuse reenter
 };
+
+// process-wide MsgSelf, same role as oneLog()
+[[nodiscard]] inline SPtr<MsgSelf> getMsgSelf() noexcept { return ObjAnywhere::getObj<MsgSelf>(); }
 }  // namespace
 // ***********************************************************************************************
 // YYYY-MM-DD  Who       v)Modification Description
@@ -122,4 +124,5 @@ private:
 // 2025-02-13  CSZ       - support both SafePtr & shared_ptr
 // 2025-03-25  CSZ       5)enable exception: tolerate is safer; can't recover except->terminate
 // 2026-10-02  CSZ       - handleAllMsg() refuses reenter
+// 2026-10-20  CSZ       - MSG_SELF macro -> getMsgSelf()
 // ***********************************************************************************************

@@ -49,13 +49,13 @@ public:
 
     // - aEle may not mt-safe, so here mv rather than cp
     // - except eg bad_alloc: can't recover->terminate
-    template<class aEleType> [[nodiscard]] bool mt_pushOK(S_PTR<aEleType>&& aEle) noexcept;
+    template<class aEleType> [[nodiscard]] bool mt_pushOK(SPtr<aEleType>&& aEle) noexcept;
 
     // - shall be called in main thread ONLY!!!
     // - high performance
     [[nodiscard]] ELE_TID pop() noexcept;
     // mismatch: leave that element and return nullptr - usr can retry than drop valuable input
-    template<class aEleType> [[nodiscard]] S_PTR<aEleType> pop() noexcept;
+    template<class aEleType> [[nodiscard]] SPtr<aEleType> pop() noexcept;
     [[nodiscard]] size_t size(bool canBlock) const noexcept;
     void clearAll() noexcept;  // clear elements + handlers
 
@@ -89,7 +89,7 @@ public:
 
 // ***********************************************************************************************
 template<class aEleType>
-bool MtInQueue::mt_pushOK(S_PTR<aEleType>&& aEle) noexcept
+bool MtInQueue::mt_pushOK(SPtr<aEleType>&& aEle) noexcept
 {
     // validate aEle
     if (!aEle)
@@ -122,7 +122,7 @@ bool MtInQueue::mt_pushOK(S_PTR<aEleType>&& aEle) noexcept
 
 // ***********************************************************************************************
 template<class aEleType>
-S_PTR<aEleType> MtInQueue::pop() noexcept
+SPtr<aEleType> MtInQueue::pop() noexcept
 {
     // nothing
     auto&& ele_tid = begin_();
@@ -136,7 +136,7 @@ S_PTR<aEleType> MtInQueue::pop() noexcept
     // pop
     auto ele = std::move(ele_tid->first);
     cache_.pop_front();
-    return STATIC_PTR_CAST<aEleType>(ele);
+    return static_ptr_cast<aEleType>(ele);
 }
 
 // ***********************************************************************************************

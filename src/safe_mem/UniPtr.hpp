@@ -7,7 +7,8 @@
 // ***********************************************************************************************
 // - why:
 //   . support both SafePtr & shared_ptr as UniPtr
-//   . switch between SafePtr & shared_ptr by modifying just 1 macro in this file
+//   . switch between SafePtr & shared_ptr by the #if in this file
+//   . SPtr/WPtr: alias templates; make_ptr/static_ptr_cast/dyn_ptr_cast: function templates
 //   . domino lib is an example on how to use UniPtr & switch SafePtr/shared_ptr
 //
 // - why supports shared_ptr?
@@ -20,27 +21,58 @@
 // ***********************************************************************************************
 #pragma once
 
+#include <utility>
+
+// ***********************************************************************************************
 #if 0
+#include <memory>
 namespace rlib
 {
 // std::~, or ambiguous with boost::~
-using   UniPtr =         std::shared_ptr<void>;
-#define MAKE_PTR         std::make_shared
-#define S_PTR            std::shared_ptr
-#define W_PTR            std::weak_ptr
-#define DYN_PTR_CAST     std::dynamic_pointer_cast
-#define STATIC_PTR_CAST  std::static_pointer_cast
+                     using UniPtr = std::shared_ptr<void>;
+template<typename T> using   SPtr = std::shared_ptr<T>;
+template<typename T> using   WPtr = std::weak_ptr<T>;
 
+template<typename T, typename... ConstructArgs>
+[[nodiscard]] SPtr<T> make_ptr(ConstructArgs&&... aArgs)
+{
+    return std::make_shared<T>(std::forward<ConstructArgs>(aArgs)...);
+}
+template<typename To, typename From>
+[[nodiscard]] SPtr<To> static_ptr_cast(const SPtr<From>& aFrom) noexcept
+{
+    return std::static_pointer_cast<To>(aFrom);
+}
+template<typename To, typename From>
+[[nodiscard]] SPtr<To> dyn_ptr_cast(const SPtr<From>& aFrom) noexcept
+{
+    return std::dynamic_pointer_cast<To>(aFrom);
+}
+
+// ***********************************************************************************************
 #else
 #include "SafePtr.hpp"
 namespace rlib
 {
-using   UniPtr =         SafePtr<void>;
-#define MAKE_PTR         make_safe
-#define S_PTR            SafePtr
-#define W_PTR            SafeWeak
-#define DYN_PTR_CAST     rlib::safe_cast
-#define STATIC_PTR_CAST  rlib::safe_cast
+                     using UniPtr = SafePtr<void>;
+template<typename T> using   SPtr = SafePtr<T>;
+template<typename T> using   WPtr = SafeWeak<T>;
+
+template<typename T, typename... ConstructArgs>
+[[nodiscard]] SPtr<T> make_ptr(ConstructArgs&&... aArgs) noexcept
+{
+    return make_safe<T>(std::forward<ConstructArgs>(aArgs)...);
+}
+template<typename To, typename From>
+[[nodiscard]] SPtr<To> static_ptr_cast(const SPtr<From>& aFrom) noexcept
+{
+    return safe_cast<To>(aFrom);
+}
+template<typename To, typename From>
+[[nodiscard]] SPtr<To> dyn_ptr_cast(const SPtr<From>& aFrom) noexcept
+{
+    return safe_cast<To>(aFrom);
+}
 #endif
 
 }  // namespace
@@ -49,4 +81,5 @@ using   UniPtr =         SafePtr<void>;
 // ..........  .........   .......................................................................
 // 2024-02-13  CSZ       1)create
 // 2025-02-13  CSZ       2)all domino lib support both SafePtr & shared_ptr
+// 2026-10-20  CSZ       - replace macro
 // ***********************************************************************************************

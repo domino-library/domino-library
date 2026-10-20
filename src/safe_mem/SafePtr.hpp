@@ -7,10 +7,12 @@
 // ***********************************************************************************************
 // ISSUE: C++ memory bugs (US Gov suggests Rust; MS/Google: ~70% safety defects are mem-related)
 //
-// REQ/value: 100% safe smart pointer (subset shared_ptr)
+// REQ/value: 100% safe smart ptr (subset shared_ptr) under SafePtr scope/control (not cover usr/T's unsafety)
 // - Create:
 //   . Only allow safe creation via eg make_safe<T>() or nullptr
-//   . Forbid unsafe eg via raw pointer/shared_ptr construction
+//   . Forbid unsafe eg via raw ptr/shared_ptr construction
+// - Destruct:
+//   . call exactly destructor, even after cast to base/void/diamond-base/etc
 // - Cast (safe_cast<T>()):
 //   . Only allow safe cast: eg among self, base & void, especially multi-inherit cast
 //   . Unsafe cast: return nullptr, or compile-time error (better)
@@ -27,7 +29,7 @@
 //   . Exception safe: make_safe/new_safe catch a throwing T constructor and return nullptr
 //
 // CONSTRAINTS:
-//   - Single-thread-use as shared_ptr (e.g., after MtInQueue.mt_push(), don't touch SafePtr)
+//   - NOT mt-safe: Single-thread-use as shared_ptr (e.g., after MtInQueue.mt_push(), don't touch SafePtr)
 //   * Circular reference: user's duty (like shared_ptr)
 //     . eg force-cast SafePtr<T> to SafePtr<U>: user's duty
 // ***********************************************************************************************
@@ -289,7 +291,7 @@ void swap(SafePtr<T>& lhs, SafePtr<T>& rhs) noexcept
 // - safe cast all possible (self/base/derive/void/back, more than cp constructor)
 // - explicit cast so ok or nullptr (cp/mv constructor is implicit & ok/compile-err)
 // - unified-ret is predictable & simple
-// - std not allow overload dynamic_pointer_cast so safe_cast & DYN_PTR_CAST
+// - std not allow overload dynamic_pointer_cast so safe_cast & dyn_ptr_cast
 template<typename To, typename From>
 [[nodiscard]] SafePtr<To> safe_cast(const SafePtr<From>& aSafeFrom) noexcept
 {
