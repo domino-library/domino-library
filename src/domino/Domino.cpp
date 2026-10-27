@@ -34,9 +34,13 @@ void Domino::deduceStateFrom_(Event aValidEv) noexcept
         tmpStack_.pop_back();
         HID("(Domino) en=" << evName_(curEV));
 
+        // No prev: keep the current state. An empty list is not "all satisfied".
+        if (findPeerEVs(curEV, prev_[true]).empty() && findPeerEVs(curEV, prev_[false]).empty())
+            continue;
+
         // recalc state from predecessors
         if (auto newState = deduceStateSelf_(curEV, true) && deduceStateSelf_(curEV, false);
-            pureSetStateOK_(curEV, newState))  // state changed
+            pureSetStateOK_(curEV, newState))  // has prev ->state changed
         {
             // propagate to successors
             for (bool branch : {true, false}) {  // search next_[true] & next_[false]
@@ -52,9 +56,9 @@ void Domino::deduceStateFrom_(Event aValidEv) noexcept
 bool Domino::deduceStateSelf_(Event aValidEv, bool aPrevType) const noexcept
 {
     for (auto&& prevEV : findPeerEVs(aValidEv, prev_[aPrevType]))
-        if (states_[prevEV] != aPrevType)  // 1 prev not satisfied
-            return false;
-    return true;
+        if (states_[prevEV] != aPrevType)
+            return false;  // deny by 1 prev
+    return true;  // no deny, include no prev
 }
 
 // ***********************************************************************************************

@@ -110,8 +110,7 @@ TYPED_TEST_P(RmDomTest, rmMiddle_thenRebuildLink_noFalseLoop)
     EXPECT_TRUE(PARA_DOM->state("C"));
 
     EXPECT_TRUE(PARA_DOM->rmEvOK("B"));
-    // C's prev removed → vacuous AND = true (no constraints left)
-    EXPECT_TRUE(PARA_DOM->state("C")) << "REQ: C has no prev after rm B → deduced T";
+    EXPECT_TRUE(PARA_DOM->state("C")) << "REQ: no prev left, C keeps T";
 
     // rewire: C directly depends on A (should not hit false loop detection from ghost B links)
     EXPECT_NE(Domino::D_EVENT_FAILED_RET, PARA_DOM->setPrev("C", {{"A", true}}))
@@ -294,11 +293,28 @@ TYPED_TEST_P(RmHdlrDomTest, rmFalsePrev_callHdlr_ifSatisfied)
     this->pongMsgSelf_();
     EXPECT_EQ(multiset<int>{0}, hdlrIDs) << "REQ: prerequisite satisfied -> call hdlr.";
 }
+// No prev, and the last prev removed: a false tile must stay F and not call.
+TYPED_TEST_P(RmHdlrDomTest, bugFix_noPrevFalse_noCB)
+{
+    multiset<int> hdlrIDs;
+    PARA_DOM->setHdlr("alone", [&hdlrIDs](){ hdlrIDs.insert(0); });
+    PARA_DOM->setPrev("alone", {});
+    EXPECT_FALSE(PARA_DOM->state("alone")) << "REQ: no prev, keep F";
+
+    PARA_DOM->setHdlr("tail", [&hdlrIDs](){ hdlrIDs.insert(1); });
+    PARA_DOM->setPrev("tail", {{"head", true}});
+    EXPECT_TRUE(PARA_DOM->rmEvOK("head"));
+    EXPECT_FALSE(PARA_DOM->state("tail")) << "REQ: last prev gone, keep F";
+
+    this->pongMsgSelf_();
+    EXPECT_EQ(multiset<int>{}, hdlrIDs) << "REQ: no hdlr";
+}
 
 REGISTER_TYPED_TEST_SUITE_P(RmHdlrDomTest
     , GOLD_rm_HdlrDom_resrc
     , rmFalsePrev_callHdlr_ifSatisfied
     , rmTruePrev_callHdlr_ifSatisfied
+    , bugFix_noPrevFalse_noCB
 );
 using AnyRmHdlrDom = Types<MaxNofreeDom>;
 INSTANTIATE_TYPED_TEST_SUITE_P(PARA, RmHdlrDomTest, AnyRmHdlrDom);
