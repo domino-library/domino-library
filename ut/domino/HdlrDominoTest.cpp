@@ -130,6 +130,39 @@ TYPED_TEST_P(NofreeHdlrDominoTest, GOLD_trigger_chain_many_calls)
     PARA_DOM->setState({{"e0", true}});   // T->T->T, req: trigger all calls
     this->pongMsgSelf_();
 }
+// A rises once. Link order makes C rise, fall, rise inside that one deduction.
+// C: A true & X false. X: A true & Y false. Y: A true.
+TYPED_TEST_P(NofreeHdlrDominoTest, deduceFTFT_oneCB)
+{
+    PARA_DOM->setPrev("C", {{"A", true}, {"X", false}});
+    PARA_DOM->setPrev("X", {{"A", true}, {"Y", false}});
+    PARA_DOM->setPrev("Y", {{"A", true}});
+    PARA_DOM->setHdlr("C", this->hdlr0_);
+
+    EXPECT_CALL(*this, hdlr0());  // REQ: one F->T, one call
+    PARA_DOM->setState({{"A", true}});
+    EXPECT_TRUE(PARA_DOM->state("C"));
+    this->pongMsgSelf_();
+}
+// C is already true. B rising makes X flicker true, so C falls and rises again.
+// C: A true & X false. X: B true & Y false. Y: B true.
+TYPED_TEST_P(NofreeHdlrDominoTest, deduceTFT_noCB)
+{
+    PARA_DOM->setPrev("C", {{"A", true}, {"X", false}});
+    PARA_DOM->setPrev("X", {{"B", true}, {"Y", false}});
+    PARA_DOM->setPrev("Y", {{"B", true}});
+    PARA_DOM->setHdlr("C", this->hdlr0_);
+
+    EXPECT_CALL(*this, hdlr0());
+    PARA_DOM->setState({{"A", true}});
+    this->pongMsgSelf_();
+
+    EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: true -> true, no call
+    PARA_DOM->setState({{"B", true}});
+    EXPECT_TRUE(PARA_DOM->state("C"));
+    EXPECT_FALSE(PARA_DOM->state("X"));
+    this->pongMsgSelf_();
+}
 TYPED_TEST_P(HdlrDominoTest, wrongOrderPrev_wrongCallback)
 {
     EXPECT_CALL(*this, hdlr0()).Times(0);  // REQ: no callback
@@ -623,6 +656,8 @@ REGISTER_TYPED_TEST_SUITE_P(NofreeHdlrDominoTest
     , UC_reTrigger_reCall
 
     , GOLD_trigger_chain_many_calls
+    , deduceFTFT_oneCB
+    , deduceTFT_noCB
 
     , rmHdlrOnRoad_thenReAdd_noCallbackUntilReTrigger
     , hdlrOnRoad_thenRmDom_noCrash_noLeak

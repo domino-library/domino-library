@@ -118,7 +118,7 @@ private:
     void pureSetPrev_(Event aValidEv, const SimuEvents&) noexcept;
     void pureRmLink_(Event aValidEv, EvLinks& aMyLinks, EvLinks& aNeighborLinks) noexcept;
     void pureRmPeers_(Event aValidEv, const EVs& aPeers, EvLinks& aNeighborLinks) noexcept;
-    void clearNextable_() noexcept;  // perf
+    void clearTmp_() noexcept;
 
     struct WhyStep{ Event curEV_; bool whyFlag_; EvName resultEN_; };
     void whyTrue_ (WhyStep&) const noexcept;
@@ -134,10 +134,12 @@ private:
 
     std::unordered_map<EvName, Event> en_ev_;  // [evName]=event; event# may huge
     EvNames                           ev_en_;  // [event]=evName
-    EVs                               effectEVs_;
-    EVs                               deduceStack_;  // perf: reused across deduce; avoids a deque alloc per call
-    std::vector<bool>                 nextable_;     // perf: setPrev reachability; false between calls
-    EVs                               nextableSet_;  // perf: bits set this call; only these are cleared
+
+    // -------------------------------------------------------------------------------------------
+    // tmp buf to improve perf:
+    EVs               tmpStack_;   // stack instead of recurse; not deque: reduce allocate when clearing stack
+    std::vector<bool> tmpEvBits_;  // [event]=mark; 10M evs = 1.25MB
+    EVs               tmpEVs_;
 
 #ifdef IN_ALL_UT  // for soak test only
 public:

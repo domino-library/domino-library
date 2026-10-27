@@ -17,23 +17,21 @@ namespace rlib
 static const Domino::EVs defaultEvPeers;  // internal use only
 
 // ***********************************************************************************************
-void Domino::clearNextable_() noexcept
+void Domino::clearTmp_() noexcept
 {
-    for (auto ev : nextableSet_)
-        nextable_[ev] = false;
-    nextableSet_.clear();
+    tmpEvBits_.assign(tmpEvBits_.size(), false);
+    tmpEVs_.clear();  // perf: keep capacity
 }
 
 // ***********************************************************************************************
 void Domino::deduceStateFrom_(Event aValidEv) noexcept
 {
-    // - Must be empty on entry. A leftover id is treated as a tile whose state just changed.
-    // - vector, not std::stack/deque: an empty deque still allocates (libstdc++)
-    deduceStack_.push_back(aValidEv);
-    while (!deduceStack_.empty())
+    // Must be empty on entry. A leftover id is treated as a tile whose state just changed.
+    tmpStack_.push_back(aValidEv);
+    while (!tmpStack_.empty())
     {
-        const auto curEV = deduceStack_.back();
-        deduceStack_.pop_back();
+        const auto curEV = tmpStack_.back();
+        tmpStack_.pop_back();
         HID("(Domino) en=" << evName_(curEV));
 
         // recalc state from predecessors
@@ -43,7 +41,7 @@ void Domino::deduceStateFrom_(Event aValidEv) noexcept
             // propagate to successors
             for (bool branch : {true, false}) {  // search next_[true] & next_[false]
                 for (auto&& nextEV : findPeerEVs(curEV, next_[branch])) {
-                    deduceStack_.push_back(nextEV);  // dup-deduce is safer (like real domino)
+                    tmpStack_.push_back(nextEV);  // dup-deduce is safer (like real domino)
                 }
             }
         }
@@ -62,10 +60,11 @@ bool Domino::deduceStateSelf_(Event aValidEv, bool aPrevType) const noexcept
 // ***********************************************************************************************
 void Domino::effect_() noexcept
 {
-    for (auto&& ev : effectEVs_)
-        if (states_[ev] == true)  // avoid multi-change; skip bounds check since effectEVs_ are validated
+    auto& falseToTrueEVs = tmpEVs_;  // first change this call was from false
+    for (auto ev : falseToTrueEVs)
+        if (states_[ev])  // net F->T; a later flip does not push again
             effect_(ev);
-    effectEVs_.clear();  // perf: keep capacity for the next wave (avoid de&re-alloc)
+    clearTmp_();
 }
 
 // ***********************************************************************************************
@@ -183,12 +182,23 @@ void Domino::pureSetPrev_(Event aValidEv, const SimuEvents& aSimuPrevEvents) noe
 // ***********************************************************************************************
 bool Domino::pureSetStateOK_(Event aValidEv, const bool aNewState) noexcept
 {
-    if (states_[aValidEv] != aNewState)  // do need change
+    if (states_[aValidEv] != aNewState)  // change
     {
+        auto& changedEVs = tmpEvBits_;
+        auto& falseToTrueEVs = tmpEVs_;
+
+        // for CB later
+        if (aValidEv >= changedEVs.size())
+            changedEVs.resize(states_.size());
+        if (!changedEVs[aValidEv]) {
+            changedEVs[aValidEv] = true;
+            if (!states_[aValidEv])   // only record F->T
+                falseToTrueEVs.push_back(aValidEv);
+        }
+
+        // set state
         states_[aValidEv] = aNewState;
         TRC("(Domino) %s=%c", evName_(aValidEv).c_str(), aNewState ? 'T' : 'F');
-        if (aNewState == true)
-            effectEVs_.push_back(aValidEv);
         return true;
     }
     return false;
@@ -237,25 +247,23 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
     const auto fromEv = getEventBy(aEvName);
     const bool targetIsNew = (fromEv == D_EVENT_FAILED_RET);
 
+    auto& nextableEVs = tmpEvBits_;
     if (!targetIsNew)
     {
-        // reachability bitmap is reused; only the bits this call sets are cleared
-        nextable_.resize(states_.size());
-        auto mark = [this](Event ev) {
-            nextable_[ev] = true;
-            nextableSet_.push_back(ev);
-        };
+        // bitmap is reused; wholly cleared before deduce, so first-change marks start false
+        nextableEVs.resize(states_.size());
+        auto mark = [&nextableEVs](Event ev) { nextableEVs[ev] = true; };
         mark(fromEv);
-        deduceStack_.push_back(fromEv);
-        while (!deduceStack_.empty())
+        tmpStack_.push_back(fromEv);
+        while (!tmpStack_.empty())
         {
-            const auto curEv = deduceStack_.back();
-            deduceStack_.pop_back();
+            const auto curEv = tmpStack_.back();
+            tmpStack_.pop_back();
             for (bool branch : {true, false}) {
                 for (auto&& nextEV : findPeerEVs(curEv, next_[branch])) {
-                    if (!nextable_[nextEV]) {
+                    if (!nextableEVs[nextEV]) {
                         mark(nextEV);  // mark-on-push(than mark-on-pop), avoid dup push & infinite loop
-                        deduceStack_.push_back(nextEV);
+                        tmpStack_.push_back(nextEV);
                     }
                 }
             }
@@ -267,27 +275,27 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
         if (prevEn == aEvName)  // self-loop, including a name that does not exist yet
         {
             ERR("(Domino) !!!Failed since invalid EN=" << aEvName << ", or loop to=" << prevEn);
-            clearNextable_();
+            clearTmp_();
             return D_EVENT_FAILED_RET;
         }
         const auto prevEv = getEventBy(prevEn);
         if (prevEv == D_EVENT_FAILED_RET || targetIsNew)
             continue;
-        if (nextable_[prevEv])
+        if (nextableEVs[prevEv])  // prev is downstream of the tile being linked
         {
             ERR("(Domino) !!!Failed since invalid EN=" << aEvName << ", or loop to=" << prevEn);
-            clearNextable_();
+            clearTmp_();
             return D_EVENT_FAILED_RET;
         }
         auto&& conflictPeers = findPeerEVs(fromEv, prev_[!state]);
         if (find(conflictPeers.begin(), conflictPeers.end(), prevEv) != conflictPeers.end())
         {
             ERR("(Domino) !!!Failed since T/F conflict on prev=" << prevEn << " for " << aEvName);
-            clearNextable_();
+            clearTmp_();
             return D_EVENT_FAILED_RET;
         }
     }
-    clearNextable_();
+    clearTmp_();
 
     // set prev
     const auto linked = newEvent(aEvName);
