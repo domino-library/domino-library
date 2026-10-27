@@ -61,7 +61,7 @@ bool Domino::deduceStateSelf_(Event aValidEv, bool aPrevType) const noexcept
 void Domino::effect_() noexcept
 {
     auto& falseToTrueEVs = tmpEVs_;  // first change this call was from false
-    for (auto ev : falseToTrueEVs)
+    for (auto ev : falseToTrueEVs)   // order no matter: treat all simultaneous
         if (states_[ev])  // net F->T; a later flip does not push again
             effect_(ev);
     clearTmp_();
@@ -243,7 +243,12 @@ void Domino::rmEv_(Event aValidEv) noexcept
 Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrevEvents) noexcept
 {
     // - A rejected call must not leave the names it looked up.
-    // - A name not in the graph yet cannot close a cycle or be both the true and the false prev.
+    // - The reach below is the graph before this call. prev→target cycles iff that reach contains prev.
+    //   . in the reach → reject; an existing tile outside it → accept; a name not in the graph yet → accept (no edge)
+    //   . a new target has no outgoing edge, so only the self-loop check can reject it
+    //   . every new edge in this call points at the target, so the pre-call reach covers the whole batch
+    // - A direct T/F conflict (one prev demanded both true and false) is rejected below.
+    //   An indirect T/F contradiction is not a cycle; whyFalse() names the tile that stays false.
     const auto fromEv = getEventBy(aEvName);
     const bool targetIsNew = (fromEv == D_EVENT_FAILED_RET);
 
@@ -269,7 +274,7 @@ Domino::Event Domino::setPrev(const EvName& aEvName, const SimuEvents& aSimuPrev
             }
         }
     }
-    // validate loop & conflict
+    // validate cycle & direct T/F conflict
     for (auto&& [prevEn, state] : aSimuPrevEvents)
     {
         if (prevEn == aEvName)  // self-loop, including a name that does not exist yet

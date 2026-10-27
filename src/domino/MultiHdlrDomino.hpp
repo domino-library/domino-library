@@ -42,7 +42,7 @@ public:
     // -------------------------------------------------------------------------------------------
     Domino::Event multiHdlrOnSameEv(const Domino::EvName&, MsgCB aHdlr, const HdlrName&) noexcept;
 
-    using aDominoType::rmOneHdlrOK;  // rm HdlrDom's by EvName
+    using aDominoType::rmOneHdlrOK;  // need at least HdlrDomino.rmOneHdlrOK(); rm HdlrDom's by EvName
     [[nodiscard]] bool rmOneHdlrOK(const Domino::EvName&, const HdlrName&) noexcept;  // rm MultiDom's by HdlrName
     void rmAllHdlr(const Domino::EvName&) noexcept;
     void rmAllHdlr() noexcept override;
@@ -77,7 +77,7 @@ void MultiHdlrDomino<aDominoType>::effect_(Domino::Event aEv) noexcept
     {
         auto&& itNext = std::next(name_hdlr);
         HID("(MultiHdlrDom) trigger 1 hdlr=" << name_hdlr->first << " of EvName=" << this->evName_(aEv));
-        this->triggerHdlr_(name_hdlr->second, aEv);  // may rm name_hdlr in FreeHdlrDomino
+        this->triggerHdlr_(name_hdlr->second, aEv);  // may rm name_hdlr in FreeHdlrDomino; need at least HdlrDomino.triggerHdlr_()
         name_hdlr = itNext;
     }
 }
@@ -111,7 +111,7 @@ Domino::Event MultiHdlrDomino<aDominoType>::multiHdlrOnSameEv(const Domino::EvNa
     if (this->state(ev))
     {
         HID("(MultiHdlrDom) Trigger the new hdlr=" << aHdlrName << "of EvName=" << aEvName);
-        this->triggerHdlr_(newHdlr, ev);
+        this->triggerHdlr_(newHdlr, ev);  // need at least HdlrDomino.triggerHdlr_()
     }
 
     return ev;
@@ -119,18 +119,18 @@ Domino::Event MultiHdlrDomino<aDominoType>::multiHdlrOnSameEv(const Domino::EvNa
 
 // ***********************************************************************************************
 template<class aDominoType>
-size_t MultiHdlrDomino<aDominoType>::nHdlr(const Domino::EvName& aEN) const noexcept
+size_t MultiHdlrDomino<aDominoType>::nHdlr(const Domino::EvName& aEN) const noexcept  // need at least HdlrDomino.nHdlr()
 {
     const auto ev = this->getEventBy(aEN);
     auto&& ev_hdlrs = ev_hdlrs_S_.find(ev);
-    return (ev_hdlrs == ev_hdlrs_S_.end() ? 0 : ev_hdlrs->second.size()) + aDominoType::nHdlr_(ev);
+    return (ev_hdlrs == ev_hdlrs_S_.end() ? 0 : ev_hdlrs->second.size()) + aDominoType::nHdlr_(ev);  // need at least HdlrDomino.nHdlr_()
 }
 
 // ***********************************************************************************************
 template<class aDominoType>
-void MultiHdlrDomino<aDominoType>::rmAllHdlr() noexcept
+void MultiHdlrDomino<aDominoType>::rmAllHdlr() noexcept  // need at least HdlrDomino.rmAllHdlr()
 {
-    aDominoType::rmAllHdlr();
+    aDominoType::rmAllHdlr();  // need at least HdlrDomino.rmAllHdlr()
     INF("(MultiHdlrDom) rm all hdlr=" << ev_hdlrs_S_.size());
     decltype(ev_hdlrs_S_) oldHdlrsS;
     oldHdlrsS.swap(ev_hdlrs_S_);  // a hdlr's dtor may re-enter this dom (eg multiHdlrOnSameEv)
@@ -141,7 +141,7 @@ template<class aDominoType>
 void MultiHdlrDomino<aDominoType>::rmAllHdlr(const Domino::EvName& aEN) noexcept
 {
     const auto ev = this->getEventBy(aEN);
-    aDominoType::rmOneHdlrOK_(ev);
+    aDominoType::rmOneHdlrOK_(ev);  // need at least HdlrDomino.rmOneHdlrOK_()
     ev_hdlrs_S_.erase(ev);
 }
 
@@ -169,10 +169,10 @@ bool MultiHdlrDomino<aDominoType>::rmOneHdlrOK(const Domino::EvName& aEvName, co
 
 // ***********************************************************************************************
 template<class aDominoType>
-bool MultiHdlrDomino<aDominoType>::rmOneHdlrOK_(Domino::Event aValidEv, const SharedMsgCB& aValidHdlr) noexcept
+bool MultiHdlrDomino<aDominoType>::rmOneHdlrOK_(Domino::Event aValidEv, const SharedMsgCB& aValidHdlr) noexcept  // need at least HdlrDomino.rmOneHdlrOK_()
 {
     // parent's hdlr?
-    if (aDominoType::rmOneHdlrOK_(aValidEv, aValidHdlr))
+    if (aDominoType::rmOneHdlrOK_(aValidEv, aValidHdlr))  // need at least HdlrDomino.rmOneHdlrOK_()
         return true;
 
     // rm

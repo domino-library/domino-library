@@ -45,12 +45,12 @@ public:
 
 // ***********************************************************************************************
 template<class aDominoType>
-EMsgPriority PriDomino<aDominoType>::getPriority(Domino::Event aEv) const noexcept
+EMsgPriority PriDomino<aDominoType>::getPriority(Domino::Event aEv) const noexcept  // need at least HdlrDomino.getPriority()
 {
     auto&& ev_pri = ev_pri_S_.find(aEv);
     return ev_pri != ev_pri_S_.end()
         ? ev_pri->second
-        : aDominoType::getPriority(aEv);  // default
+        : aDominoType::getPriority(aEv);  // default; need at least HdlrDomino.getPriority()
 }
 
 // ***********************************************************************************************
@@ -66,7 +66,7 @@ template<class aDominoType>
 Domino::Event PriDomino<aDominoType>::setPriority(const Domino::EvName& aEvName, const EMsgPriority aPri) noexcept
 {
     // validate
-    if (this->nHdlr(aEvName) > 0)
+    if (this->nHdlr(aEvName) > 0)  // need at least HdlrDomino.nHdlr()
     {
         ERR("(PriDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/misleading result");
         return Domino::D_EVENT_FAILED_RET;
@@ -79,7 +79,7 @@ Domino::Event PriDomino<aDominoType>::setPriority(const Domino::EvName& aEvName,
 
     HID("(PriDom) EvName=" << aEvName << ", newPri=" << size_t(aPri));
     auto&& event = this->newEvent(aEvName);
-    if (aPri == aDominoType::getPriority(event))
+    if (aPri == aDominoType::getPriority(event))  // need at least HdlrDomino.getPriority()
         ev_pri_S_.erase(event);  // less mem & faster searching
     else
         ev_pri_S_[event] = aPri;

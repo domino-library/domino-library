@@ -38,8 +38,8 @@ protected:
 
 private:
     // forbid outside use base directly
-    using aDominoType::getData;
-    using aDominoType::replaceDataOK;
+    using aDominoType::getData;  // need at least DataDomino.getData()
+    using aDominoType::replaceDataOK;  // need at least DataDomino.replaceDataOK()
     bool isWrCtrl_(Domino::Event aEv) const noexcept { return aEv < wrCtrl_.size() ? wrCtrl_[aEv] : false; }
     // -------------------------------------------------------------------------------------------
     std::vector<bool> wrCtrl_;
@@ -50,10 +50,10 @@ public:
 
 // ***********************************************************************************************
 template<typename aDominoType>
-SPtr<void> WbasicDatDom<aDominoType>::getData(const Domino::EvName& aEvName) const noexcept
+SPtr<void> WbasicDatDom<aDominoType>::getData(const Domino::EvName& aEvName) const noexcept  // need at least DataDomino.getData()
 {
     if (const auto ev = this->getEventBy(aEvName); not isWrCtrl_(ev))
-        return aDominoType::getData_(ev);
+        return aDominoType::getData_(ev);  // need at least DataDomino.getData_()
 
     WRN("(WbasicDatDom) Failed!!! EvName=" << aEvName << " is write-protect so unavailable via this func!!!");
     return nullptr;
@@ -68,13 +68,13 @@ bool WbasicDatDom<aDominoType>::isWrCtrl(const Domino::EvName& aEvName) const no
 
 // ***********************************************************************************************
 template<typename aDominoType>
-bool WbasicDatDom<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, SPtr<void> aData) noexcept
+bool WbasicDatDom<aDominoType>::replaceDataOK(const Domino::EvName& aEvName, SPtr<void> aData) noexcept  // need at least DataDomino.replaceDataOK()
 {
     if (const auto ev = this->getEventBy(aEvName); isWrCtrl_(ev)) {
         WRN("(WbasicDatDom) Failed!!! EvName=" << aEvName << " is write-protect so unavailable via this func!!!");
         return false;
     }
-    else return aDominoType::replaceDataOK(aEvName, std::move(aData));
+    else return aDominoType::replaceDataOK(aEvName, std::move(aData));  // need at least DataDomino.replaceDataOK()
 }
 
 // ***********************************************************************************************
@@ -92,7 +92,7 @@ template<typename aDominoType>
 SPtr<void> WbasicDatDom<aDominoType>::wbasic_getData(const Domino::EvName& aEvName) const noexcept
 {
     if (const auto ev = this->getEventBy(aEvName); isWrCtrl_(ev))
-        return aDominoType::getData_(ev);
+        return aDominoType::getData_(ev);  // need at least DataDomino.getData_()
 
     WRN("(WbasicDatDom) Failed!!! EvName=" << aEvName << " is not write-protect so unavailable via this func!!!");
     return nullptr;
@@ -103,7 +103,7 @@ template<typename aDominoType>
 bool WbasicDatDom<aDominoType>::wbasic_replaceDataOK(const Domino::EvName& aEvName, SPtr<void> aData) noexcept
 {
     if (const auto ev = this->getEventBy(aEvName); isWrCtrl_(ev))
-        return aDominoType::replaceDataOK(aEvName, std::move(aData));
+        return aDominoType::replaceDataOK(aEvName, std::move(aData));  // need at least DataDomino.replaceDataOK()
     else {
         WRN("(WbasicDatDom) Failed!!! EvName=" << aEvName << " is not write-protect so unavailable via this func!!!");
         return false;
@@ -115,7 +115,7 @@ template<typename aDominoType>
 bool WbasicDatDom<aDominoType>::wrCtrlOk(const Domino::EvName& aEvName, const bool aNewState) noexcept
 {
     const auto ev = this->newEvent(aEvName);
-    if (aDominoType::getData_(ev))
+    if (aDominoType::getData_(ev))  // need at least DataDomino.getData_()
     {
         WRN("(WbasicDatDom) !!! Failed to change wrCtrl when already own data(out-of-ctrl), EvName=" << aEvName);
         return false;

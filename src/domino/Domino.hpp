@@ -40,9 +40,7 @@
 // - MT safe: no
 // - use-safe: yes with conditions:
 //   . no too many events/.. that use-up mem (impossible in most cases)
-//   * user shall not loop ev-link
-//     . domino can reject some loop, but not all (see UT for more info)
-//     . whyFalse() is another way to find a loop
+//   * user shall not loop ev-link - domino will reject
 // - Q&A: (below; lots)
 // ***********************************************************************************************
 #pragma once
@@ -96,7 +94,7 @@ public:
     [[nodiscard]] bool state(Event aEv) const noexcept { return aEv < states_.size() ? states_[aEv] : false; }
     size_t setState(const SimuEvents&) noexcept;  // ret real changed ev#
 
-    Event  setPrev(const EvName&, const SimuEvents&) noexcept;  // be careful not create eg true-false loop
+    Event  setPrev(const EvName&, const SimuEvents&) noexcept;  // rejects if illegal detected; whyFalse() may help debug complex
     [[nodiscard]] EvName whyFalse(Event) const noexcept;  // debug only; read-only API - no hurt if fake Event
 
 protected:

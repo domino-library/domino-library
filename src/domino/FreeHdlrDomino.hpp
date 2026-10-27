@@ -60,7 +60,7 @@ void FreeHdlrDomino<aDominoType>::cb_hdlr_(FreeHdlrDomino* aSelfDom, Domino::Eve
     if (! hdlr)
         return;  // cb already dropped: the dom is gone, or this hdlr was removed
     // cb still owned by the dom, so aSelfDom is alive
-    aSelfDom->rmOneHdlrOK_(aValidEv, hdlr);
+    aSelfDom->rmOneHdlrOK_(aValidEv, hdlr);  // need at least HdlrDomino.rmOneHdlrOK_()
     try { (*(hdlr.get()))(); }  // setHdlr() forbid cb==null
     catch(...) {
         EMG("(FreeHdlrDomino) hdlr() except=%s, ev=%zu", mt_exceptInfo(), aValidEv);
@@ -81,7 +81,7 @@ template<class aDominoType>
 Domino::Event FreeHdlrDomino<aDominoType>::repeatedHdlr(const Domino::EvName& aEvName, const bool isRepeated) noexcept
 {
     // validate
-    if (this->nHdlr(aEvName) > 0)
+    if (this->nHdlr(aEvName) > 0)  // need at least HdlrDomino.nHdlr()
     {
         ERR("(FreeHdlrDom) FAILED since exist hdlr(s) in en=" << aEvName << ", avoid complex/misleading result");
         return Domino::D_EVENT_FAILED_RET;
@@ -107,21 +107,21 @@ void FreeHdlrDomino<aDominoType>::rmEv_(Domino::Event aValidEv) noexcept
 
 // ***********************************************************************************************
 template<class aDominoType>
-void FreeHdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Domino::Event aValidEv) noexcept
+void FreeHdlrDomino<aDominoType>::triggerHdlr_(const SharedMsgCB& aValidHdlr, Domino::Event aValidEv) noexcept  // need at least HdlrDomino.triggerHdlr_()
 {
     // repeated hdlr
     if (isRepeatHdlr(aValidEv))
     {
-        aDominoType::triggerHdlr_(aValidHdlr, aValidEv);
+        aDominoType::triggerHdlr_(aValidHdlr, aValidEv);  // need at least HdlrDomino.triggerHdlr_()
         return;
     }
 
     HID("(FreeHdlrDom) trigger a rm-then-call msg for en=" << this->evName_(aValidEv));
-    if (!this->msgSelf_->newMsgOK(
+    if (!this->msgSelf_->newMsgOK(  // need at least HdlrDomino.msgSelf_
         [self = this, aValidEv, weakHdlr = WeakMsgCB(aValidHdlr)]() noexcept {
             cb_hdlr_(self, aValidEv, weakHdlr);  // not exe here
         },
-        this->getPriority(aValidEv)
+        this->getPriority(aValidEv)  // need at least HdlrDomino.getPriority()
     ))
     {
         ERR("(FreeHdlrDom) Failed to newMsgOK for en=" << this->evName_(aValidEv));
