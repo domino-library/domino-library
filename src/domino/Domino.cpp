@@ -24,6 +24,7 @@ void Domino::clearTmp_() noexcept
 }
 
 // ***********************************************************************************************
+// ut=hazardMerge_deduceTime：rare but diamonds-chain may boom-slow
 void Domino::deduceStateFrom_(Event aValidEv) noexcept
 {
     // Must be empty on entry. A leftover id is treated as a tile whose state just changed.

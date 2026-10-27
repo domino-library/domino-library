@@ -6,6 +6,7 @@
  */
 // ***********************************************************************************************
 #include <chrono>
+#include <iostream>
 #include <memory>  // for shared_ptr
 #include <set>
 
@@ -602,6 +603,67 @@ TEST(DominoMemTest, GOLD_perf_mem)  // can pass bybuild/make -j run > /tmp/ut.lo
     EXPECT_LE(bytesPerEv, 380u) << "mem/event=" << bytesPerEv
         << "B, total=" << (totalBytes >> 20) << "MB for " << N << " events";
     EXPECT_LE(msDur, 400) << "time=" << msDur << "ms for " << N << " events";
+}
+
+// Two hazard sources merged per stage:
+//   a,b both T-follow x; g = b && !a (fixed point F); two such g's; y = !g1 && !g2 (fixed point T)
+// One rising edge becomes two pulses, and the next stage doubles them, so pops grow as 2^k.
+static string buildHazardChain_(Domino& dom, int k)
+{
+    auto idx2 = [](int i) {
+        const string s = std::to_string(i);
+        return string(2 - s.size(), '0') + s;
+    };
+    dom.newEvent("s");
+    dom.setPrev("h", {{"s", true}});
+    string x = "h";
+    for (int i = 0; i < k; ++i) {
+        const string p = "S" + idx2(i);
+        string g1, g2;
+        for (int j = 1; j <= 2; ++j) {
+            const string a = p + "g" + std::to_string(j) + "a";
+            const string b = p + "g" + std::to_string(j) + "b";
+            const string g = p + "g" + std::to_string(j);
+            dom.setPrev(a, {{x, true}});
+            dom.setPrev(b, {{x, true}});
+            dom.setPrev(g, {{b, true}, {a, false}});
+            if (j == 1) g1 = g; else g2 = g;
+        }
+        x = p + "y";
+        dom.setPrev(x, {{g1, false}, {g2, false}});
+    }
+    return x;
+}
+
+// trace off: TRC on every flip would hide the walk cost.
+TEST(DominoMemTest, hazardMerge_deduceTime)
+{
+    const bool prevTrace = traceOn_;
+    traceOn_ = false;
+
+    std::cout << "hazard-merge deduce (TRACE off), one setState(s=true):\n";
+    long long prevUs = 0;
+    for (int k : {16, 18, 20}) {
+        Domino dom;
+        const string x = buildHazardChain_(dom, k);
+
+        using Clock = std::chrono::steady_clock;
+        const auto t0 = Clock::now();
+        dom.setState({{"s", true}});
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - t0).count();
+
+        EXPECT_TRUE(dom.state(x)) << "k=" << k;
+        std::cout << "  k=" << k << " tiles=" << (2 + 7 * k) << " us=" << us;
+        if (prevUs > 0) {
+            const auto times10 = (us * 10 + prevUs / 2) / prevUs;
+            std::cout << "  x" << (times10 / 10) << '.' << (times10 % 10);
+        }
+        std::cout << '\n' << std::flush;
+        prevUs = us;
+        if (us > 3'000'000)
+            break;
+    }
+    traceOn_ = prevTrace;
 }
 
 }  // namespace
