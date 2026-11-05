@@ -242,9 +242,9 @@ SafePtr<T> SafePtr<T>::handover() noexcept
     SafePtr<T> fresh;
     try {
         fresh.pT_ = std::shared_ptr<T>(pT_.get(), SafeDeleter{nullptr, oldDel->obj_});
-    } catch(...) {
+    } catch(...) {  // GCOVR_EXCL_LINE bad_alloc only
         EMG("handover except=%s", mt_exceptInfo());
-        return nullptr;  // *this unchanged: the new deleter was created with del_ null
+        return nullptr;  // GCOVR_EXCL_LINE *this unchanged
     }
     std::get_deleter<SafeDeleter>(fresh.pT_)->del_ = oldDel->del_;  // fresh owns
     oldDel->del_ = nullptr;                                         // old owns nothing
