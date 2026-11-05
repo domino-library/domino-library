@@ -25,11 +25,13 @@
 // - Additional Features:
 //   * max (safe + convenient) / (mem + perf + impl)
 //   . SafeWeak: weak reference support (lock()/expired())
+//   . handover(): sole new_safe -> new identity (old weak expire); else nullptr, *this kept
 //   . Container support: usable as map/unordered_map key
 //   . Exception safe: make_safe/new_safe catch a throwing T constructor and return nullptr
 //
 // CONSTRAINTS:
-//   - NOT mt-safe: Single-thread-use as shared_ptr (e.g., after MtInQueue.mt_push(), don't touch SafePtr)
+//   - NOT mt-safe: Single-thread-use as shared_ptr
+//   . cross-thread: new_safe + MtInQueue (handover cuts old weak refs)
 //   * Circular reference: user's duty (like shared_ptr)
 //     . eg force-cast SafePtr<T> to SafePtr<U>: user's duty
 // ***********************************************************************************************
@@ -42,13 +44,32 @@
 
 namespace rlib
 {
+// ***********************************************************************************************
+// - in the ctrl blk, so get_deleter finds it on any view (void/base/self)
+// - obj_ is the created U*: ~U runs even through a base/void that has no virtual dtor
+// - del_ null: handover() has taken the object; this deleter deletes nothing
+struct SafeDeleter
+{
+    void (*del_)(void*);
+    void* obj_;
+
+    void operator()(const void*) const noexcept { if (del_) del_(obj_); }
+};
+
+// public enable_shared_from_this (self or base): its weak_from_this() is visible
+// - private base / ambiguous bases: lookup fails -> false (shared_ptr won't set weak_this either)
+template<class T, class = void> struct has_from_this : std::false_type {};
+template<class T> struct has_from_this<T, std::void_t<decltype(std::declval<const T&>().weak_from_this())>>
+    : std::true_type {};
+template<class T> constexpr bool has_from_this_v = has_from_this<T>::value;
+
+// ***********************************************************************************************
 template<typename T> class SafeWeak;
 
 // EBO: type_index only exists for SafePtr<void>, zero overhead for SafePtr<T≠void>
 template<bool> struct void_type_index {};
 template<>     struct void_type_index<true> { std::type_index lastType_ = typeid(void); };  // type before cast to void
 
-// ***********************************************************************************************
 template<typename T = void>
 class SafePtr : private void_type_index<std::is_void_v<T>>
 {
@@ -103,6 +124,7 @@ public:
     std::shared_ptr<T> operator->() const noexcept;  // convenient; unsafe to ret ref
     explicit operator bool() const noexcept { return pT_ != nullptr; }
     [[nodiscard]] auto use_count() const noexcept { return pT_.use_count(); }
+    [[nodiscard]] SafePtr handover() noexcept;  // drop weak_ptr, transfer ownership, new_safe only
     void swap(SafePtr& aOther) noexcept;
     template<typename U> [[nodiscard]]
         bool owner_before(const SafePtr<U>& aOther) const noexcept { return pT_.owner_before(aOther.pT_); }
@@ -205,6 +227,34 @@ std::shared_ptr<To> SafePtr<T>::cast() const noexcept
 }
 
 // ***********************************************************************************************
+// - sole owner from new_safe -> new ctrl blk, same object: old SafeWeak/weak_ptr expire
+// - else nullptr and *this unchanged (null, other owner, or make_safe)
+// - fresh starts with del_ null: if the new ctrl blk throws, its deleter must not delete the object
+template<typename T>
+SafePtr<T> SafePtr<T>::handover() noexcept
+{
+    if (pT_.use_count() != 1)
+        return nullptr;
+    auto* oldDel = std::get_deleter<SafeDeleter>(pT_);
+    if (!oldDel)
+        return nullptr;
+
+    SafePtr<T> fresh;
+    try {
+        fresh.pT_ = std::shared_ptr<T>(pT_.get(), SafeDeleter{nullptr, oldDel->obj_});
+    } catch(...) {
+        EMG("handover except=%s", mt_exceptInfo());
+        return nullptr;  // *this unchanged: the new deleter was created with del_ null
+    }
+    std::get_deleter<SafeDeleter>(fresh.pT_)->del_ = oldDel->del_;  // fresh owns
+    oldDel->del_ = nullptr;                                         // old owns nothing
+    if constexpr(std::is_void_v<T>)
+        fresh.lastType_ = this->lastType_;
+    *this = nullptr;  // old ctrl blk dies; weak refs on it expire
+    return fresh;
+}
+
+// ***********************************************************************************************
 template<typename T>
 auto SafePtr<T>::lastType() const noexcept
 {
@@ -248,13 +298,24 @@ template<typename U, typename... ConstructArgs>
     }
     return safeU;
 }
+
 template<typename U, typename... ConstructArgs>
 [[nodiscard]] SafePtr<U> new_safe(ConstructArgs&&... aArgs) noexcept
 {
+    // handover() builds a 2nd ctrl blk; weak_this stays on the 1st, so shared_from_this() breaks
+    static_assert(!has_from_this_v<U>,
+        "(SafePtr) new_safe rejects enable_shared_from_this. make_safe is fine (one ctrl blk).");
     SafePtr<U> safeU;
     try {  // bad_alloc, or except from U's constructor
-        // shared_ptr(Y*) ctor: if ctrl-blk alloc throws, Y* is deleted (std guarantee, no leak)
-        safeU.pT_ = std::shared_ptr<U>(new U(std::forward<ConstructArgs>(aArgs)...));
+        // not make_shared: U must sit outside the ctrl blk, or handover() can't retarget it
+        // shared_ptr(Y*, D): if ctrl-blk alloc throws, D(Y*) runs (del_ is set, so U is deleted)
+        U* p = new U(std::forward<ConstructArgs>(aArgs)...);
+        // default_delete, not a raw delete: same ~U, and the delete-expr stays in the std header
+        // (a raw delete here warns for a polymorphic U that has no virtual dtor)
+        // const U*: stored as void*, so strip const here; static_cast<U*>(void*) restores it
+        safeU.pT_ = std::shared_ptr<U>(p, SafeDeleter{
+            [](void* o) { std::default_delete<U>()(static_cast<U*>(o)); },
+            const_cast<std::remove_const_t<U>*>(p)});
     } catch(...) {  // bad_alloc, or T's constructor; EMG, then return nullptr
         EMG("new_safe except=%s", mt_exceptInfo());
     }
@@ -392,6 +453,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 // 2026-04-28  CSZ       - drop redundant SafePtr→SafeWeak conversion op (SafeWeak ctor covers all)
 // 2026-06-08  CSZ       - perf: ==/!=/< & hash compare raw-ptr identity (no refcount churn on map keys)
 // 2026-10-14  CSZ       - EMG in rare err
+// 2026-11-04  CSZ       - new_safe + handover() to enhance eg MtInQueue's push safety
 // ***********************************************************************************************
 // - Q&A
 //   * noexcept & constexpr (for whole lib)

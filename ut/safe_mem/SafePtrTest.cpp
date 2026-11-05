@@ -142,6 +142,15 @@ TEST(SafePtrTest, GOLD_unsafeCreate_forbid)
     static_assert(!is_constructible<SafePtr<int>, shared_ptr<int>>::value,
         "REQ: forbid construct: shared_ptr is unsafe - that's why SafePtr exists");
 }
+TEST(SafePtrTest, GOLD_explicitBool_noArithmetic)
+{
+    static_assert(!is_convertible<SafePtr<int>, bool>::value,
+        "REQ: explicit operator bool rejects copy-init (bool b = p)");
+    static_assert(is_constructible<bool, SafePtr<int>>::value,
+        "REQ: explicit operator bool still allows direct-init bool(p)");
+    static_assert(!is_convertible<SafePtr<int>, int>::value,
+        "REQ: explicit operator bool blocks integral promotion (p + 1)");
+}
 TEST(SafePtrTest, safeCreate_default)
 {
     SafePtr v;
@@ -704,6 +713,27 @@ TEST(SafePtrTest, GOLD_destructByBase)
     EXPECT_VALID(test);
     EXPECT_TRUE(isDeriveOver) << "REQ: correctly destructed by SafePtr<TestBase>";
 }
+TEST(SafePtrTest, GOLD_destructByNonVirtualBase)
+{
+    bool done = false;
+    struct B {};
+    struct D : B {
+        bool& done_;
+        explicit D(bool& a) : done_(a) {}
+        ~D() { done_ = true; }
+    };
+
+    SafePtr<B> p = make_safe<D>(done);
+    p = nullptr;
+    EXPECT_VALID(p);
+    EXPECT_TRUE(done) << "REQ: ~D runs though ~B is not virtual";
+
+    done = false;
+    SafePtr<void> v(SafePtr<B>(make_safe<D>(done)));
+    v = nullptr;
+    EXPECT_VALID(v);
+    EXPECT_TRUE(done) << "REQ: same through SafePtr<void>";
+}
 
 #define LIKE_SHARED_PTR
 // ***********************************************************************************************
@@ -879,6 +909,7 @@ TEST(SafePtrTest, GOLD_voidMap_sameObj_oneKey)
 // EBO: SafeWeak<T≠void> = sizeof(weak_ptr), SafeWeak<void> = weak_ptr + type_index
 static_assert(sizeof(SafeWeak<int>) == sizeof(std::weak_ptr<int>), "EBO: zero overhead for non-void SafeWeak");
 static_assert(sizeof(SafeWeak<void>) == sizeof(std::weak_ptr<void>) + sizeof(std::type_index), "EBO: +8B for void SafeWeak only");
+static_assert(sizeof(SafeDeleter) == 2 * sizeof(void*), "SafeDeleter is two pointers, no padding");
 
 TEST(SafePtrTest, GOLD_convert_SafePtr_WeakPtr)
 {
@@ -1129,6 +1160,83 @@ TEST(SafePtrTest, newSafe_destruct_byBase)
     p = nullptr;
     EXPECT_VALID(p);
     EXPECT_TRUE(isDeriveOver) << "REQ: new_safe correctly destructs derived through base";
+}
+TEST(SafePtrTest, newSafe_const)
+{
+    auto c = new_safe<const int>(7);
+    EXPECT_VALID(c);
+    EXPECT_EQ(7, *c.get()) << "REQ: new_safe<const T>";
+    auto fresh = c.handover();
+    EXPECT_VALID(fresh);
+    EXPECT_EQ(nullptr, c.get()) << "REQ: const source cleared";
+    EXPECT_EQ(7, *fresh.get()) << "REQ: const value survives handover";
+}
+TEST(SafePtrTest, newSafe_rejects_enableSharedFromThis)
+{
+    struct Self : std::enable_shared_from_this<Self> {};
+    struct Base : std::enable_shared_from_this<Base> {};
+    struct Der : Base {};
+    struct Plain {};
+    struct Holds { Self s_; };  // a member is not a base
+    struct Hidden : private std::enable_shared_from_this<Hidden> {};
+
+    static_assert(has_from_this_v<Self>);
+    static_assert(has_from_this_v<const Self>);
+    static_assert(has_from_this_v<Der>);       // inherited, not enable_shared_from_this<Der>
+    static_assert(!has_from_this_v<Plain>);
+    static_assert(!has_from_this_v<Holds>);
+    static_assert(!has_from_this_v<Hidden>);   // private: shared_ptr can't see it either
+    // new_safe<Self>();  // REQ: compile err
+    // new_safe<Der>();   // REQ: compile err
+
+    auto ok = make_safe<Self>();
+    EXPECT_EQ(ok.get().get(), ok->shared_from_this().get()) << "REQ: make_safe keeps one ctrl blk";
+}
+TEST(SafePtrTest, handover_rejected_leavesSource)
+{
+    SafePtr<int> empty;
+    EXPECT_EQ(nullptr, empty.handover().get()) << "REQ: null handover";
+
+    auto made = make_safe<int>(7);
+    EXPECT_EQ(nullptr, made.handover().get()) << "REQ: make_safe can't handover";
+    EXPECT_EQ(1, made.use_count()) << "REQ: make_safe source kept";
+    EXPECT_EQ(7, *made.get());
+
+    auto neu = new_safe<int>(8);
+    auto share = neu;
+    EXPECT_EQ(nullptr, neu.handover().get()) << "REQ: use_count>1 can't handover";
+    EXPECT_EQ(2, neu.use_count()) << "REQ: shared source kept";
+    EXPECT_EQ(8, *neu.get());
+}
+TEST(SafePtrTest, handover_cutsOldWeak_andCanRepeat)
+{
+    auto ele = new_safe<int>(9);
+    SafeWeak<int> old(ele);
+    auto fresh = ele.handover();
+    EXPECT_VALID(fresh);
+    EXPECT_EQ(nullptr, ele.get()) << "REQ: source cleared";
+    EXPECT_TRUE(old.expired()) << "REQ: old SafeWeak expired";
+    EXPECT_EQ(9, *fresh.get());
+
+    SafeWeak<int> again(fresh);
+    EXPECT_FALSE(again.expired()) << "REQ: new SafePtr can make a SafeWeak";
+    auto twice = fresh.handover();
+    EXPECT_VALID(twice);
+    EXPECT_EQ(nullptr, fresh.get()) << "REQ: first handover result cleared";
+    EXPECT_TRUE(again.expired()) << "REQ: its SafeWeak expired too";
+    EXPECT_EQ(9, *twice.get());
+}
+TEST(SafePtrTest, handover_void_keepsLastType)
+{
+    auto ele = new_safe<int>(7);
+    SafePtr<void> asVoid(move(ele));
+    SafeWeak<void> weak(asVoid);
+    auto fresh = asVoid.handover();
+    EXPECT_VALID(fresh);
+    EXPECT_EQ(nullptr, asVoid.get()) << "REQ: void source cleared";
+    EXPECT_TRUE(weak.expired()) << "REQ: SafeWeak<void> expired";
+    EXPECT_EQ(type_index(typeid(int)), fresh.lastType()) << "REQ: lastType survives handover";
+    EXPECT_EQ(7, *safe_cast<int>(fresh).get()) << "REQ: value survives";
 }
 
 #define SECURITY

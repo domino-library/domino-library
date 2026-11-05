@@ -360,23 +360,23 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
 
     // setup msg handler table for mt_getQ()
     EXPECT_EQ(0u, mt_getQ().nHdlr())  << "REQ: init no hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([ms, &cb_info](UniPtr aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([ms, &cb_info](SafePtr<void> aMsg)
     {
         EXPECT_TRUE(ms->newMsgOK(  // REQ: via MsgSelf
             [aMsg, &cb_info]
             {
-                EXPECT_EQ("a", *(static_ptr_cast<std::string>(aMsg).get()));
+                EXPECT_EQ("a", *(safe_cast<std::string>(aMsg).get()));
                 cb_info.emplace("REQ: a's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
     })) << "REQ: set hdlr";
     EXPECT_EQ(1u, mt_getQ().nHdlr())  << "REQ: count hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([ms, &cb_info](UniPtr aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([ms, &cb_info](SafePtr<void> aMsg)
     {
         EXPECT_TRUE(ms->newMsgOK(
             [aMsg, &cb_info]
             {
-                EXPECT_EQ(2, *(static_ptr_cast<int>(aMsg).get()));
+                EXPECT_EQ(2, *(safe_cast<int>(aMsg).get()));
                 cb_info.emplace("REQ: 2's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
@@ -387,7 +387,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<std::string>("a"))) << "REQ: push OK";
+            EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<std::string>("a"))) << "REQ: push OK";
             return make_safe<bool>(true);
         },
         // backFn
@@ -402,7 +402,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(make_ptr<int>(2))) << "REQ: push OK";
+            EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<int>(2))) << "REQ: push OK";
             return make_safe<bool>(true);
         },
         // backFn

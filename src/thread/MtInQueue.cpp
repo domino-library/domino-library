@@ -22,7 +22,7 @@ MtInQueue::~MtInQueue() noexcept
 }
 
 // ***********************************************************************************************
-deque<ELE_TID>::iterator MtInQueue::begin_() noexcept
+deque<SafePtr<void>>::iterator MtInQueue::begin_() noexcept
 {
     if (cache_.empty())
     {
@@ -39,7 +39,7 @@ deque<ELE_TID>::iterator MtInQueue::begin_() noexcept
     }
     // unlocked
 
-    // HID("(MtQ) ptr=" << cache_.begin()->first.get() << ", nRef=" << cache_.begin()->first.use_count());
+    // HID("(MtQ) ptr=" << cache_.begin()->get() << ", nRef=" << cache_.begin()->use_count());
     return cache_.begin();
 }
 
@@ -49,8 +49,9 @@ size_t MtInQueue::handleCacheEle_() noexcept
     const auto nEle = cache_.size();
     while (! cache_.empty())
     {
-        auto [ele, tid] = move(cache_.front());  // avoid cp
+        auto ele = move(cache_.front());  // avoid cp; lastType_ is the type key
         cache_.pop_front();
+        const auto tid = ele.lastType();
 
         auto&& id_hdlr = find_if(
             tid_hdlr_S_.begin(), tid_hdlr_S_.end(),
@@ -98,7 +99,7 @@ void MtInQueue::clearAll() noexcept
         return;
 
     // Don't destruct user objects while holding mt_mutex_: their destructor may re-enter mt_pushOK().
-    deque<ELE_TID> discarded;
+    deque<SafePtr<void>> discarded;
     {
         lock_guard guard(mt_mutex_);
         discarded.swap(mt_queue_);
@@ -128,17 +129,17 @@ size_t MtInQueue::size(bool canBlock) const noexcept
 }
 
 // ***********************************************************************************************
-ELE_TID MtInQueue::pop() noexcept
+SafePtr<void> MtInQueue::pop() noexcept
 {
     // nothing
     auto&& it = begin_();
     if (it == cache_.end())
-        return ELE_TID(nullptr, typeid(void));
+        return nullptr;
 
     // pop
-    auto ele_tid = move(*it);  // take it out before pop; a ref into cache_ dangles after pop_front
+    auto ele = move(*it);  // take it out before pop; a ref into cache_ dangles after pop_front
     cache_.pop_front();
-    return ele_tid;
+    return ele;
 }
 
 // ***********************************************************************************************

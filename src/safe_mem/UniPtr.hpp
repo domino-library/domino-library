@@ -14,10 +14,17 @@
 // - why supports shared_ptr?
 //   . from mem-safe pov, SafePtr is the only choice
 //   * but shared_ptr is more common, easier than imposing to SafePtr
-//
 // - principle to use SafePtr
 //   . pub interface: shall use SafePtr for safety
 //   . inner can directly use shared_ptr if safe: simpler & faster
+//
+// - why not SafeUnique to inc unique_ptr's safety?
+//   . get() can't return unique_ptr - not safe
+//   . can't cast to void* except inc mem - conflict unique_ptr's ideal
+//   . diff deleter = diff type
+// - value: what SafeUnique can do?
+//   . construct & destruct safe: no-multi-owner; no-free-stackObj, etc
+//   . cast safe: check hierarchy, virtual destructor, etc
 // ***********************************************************************************************
 #pragma once
 
