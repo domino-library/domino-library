@@ -631,6 +631,18 @@ TEST_F(UniCoutLogTest, bugFix_coutFailure_swallowed)
     EXPECT_TRUE(UniCoutLog::setLogFileOK("")) << "REQ: cout works again after the failure is cleared";
 }
 
+// A control char sets preC. The next printable char is pushed onto its own line.
+TEST_F(UniCoutLogTest, coutAscii_controlThenPrintable_breaksLine)
+{
+    CoutCapture cap;
+    cout_ascii("a\nb");
+    cout_ascii("a\rb");
+    std::cout.flush();
+    const auto text = cap.buf.str();
+    EXPECT_NE(text.find("a[`a'}\nb"), std::string::npos) << text;
+    EXPECT_NE(text.find("a[`d'}\nb"), std::string::npos) << text;
+}
+
 // cout_ascii writes cout. oneLog() holds coutMutex_ for the whole line. Both must share that lock.
 TEST_F(UniCoutLogTest, bugFix_coutAscii_otherThread_withOneLog)
 {

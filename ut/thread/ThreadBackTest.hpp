@@ -792,6 +792,38 @@ TEST_F(THREAD_BACK_TEST, bugFix_entryRet_detachWeak_fails)
     pinRetSlot_() = nullptr;
 }
 
+// int / enum / string are on the entry whitelist. A function pointer, not a lambda.
+enum class UtEntryColor_ { Red = 3 };
+inline SafePtrOver<void> ut_entryInt_(int n) { return make_over<int>(n); }
+inline SafePtrOver<void> ut_entryEnum_(UtEntryColor_ c) { return make_over<int>(static_cast<int>(c)); }
+inline SafePtrOver<void> ut_entryStr_(std::string s) { return make_over<int>(static_cast<int>(s.size())); }
+
+TEST_F(THREAD_BACK_TEST, entry_valueArgs_intEnumString)
+{
+    static_assert(is_entry_arg<int>::value);
+    static_assert(is_entry_arg<UtEntryColor_>::value);
+    static_assert(is_entry_arg<std::string>::value);
+    static_assert(!is_entry_arg<char*>::value);
+
+    int n = 7;
+    MT_SafeThEntryFN byInt(ut_entryInt_, n);
+    auto retInt = byInt();
+    ASSERT_TRUE(retInt);
+    EXPECT_EQ(7, *retInt.safe_cast<int>());
+
+    MT_SafeThEntryFN byEnum(ut_entryEnum_, UtEntryColor_::Red);
+    auto retEnum = byEnum();
+    ASSERT_TRUE(retEnum);
+    EXPECT_EQ(3, *retEnum.safe_cast<int>());
+
+    std::string text = "hi";
+    MT_SafeThEntryFN byStr(ut_entryStr_, text);
+    EXPECT_EQ("hi", text) << "REQ: string is copied, the caller's value stays";
+    auto retStr = byStr();
+    ASSERT_TRUE(retStr);
+    EXPECT_EQ(2, *retStr.safe_cast<int>());
+}
+
 TEST_F(THREAD_BACK_TEST, entry_move_clears_source)
 {
     auto in = make_over<int>(9);

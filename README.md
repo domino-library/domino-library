@@ -4,7 +4,7 @@
 
 # Domino Library
 
-A small C++17 library.
+A small C++17 library. BSD 3-Clause, except files marked [PolyForm Small Business 1.0.0](https://polyformproject.org/licenses/small-business/1.0.0).
 
 Talk is cheap. Let $\color{red}{\textsf{AI}}$ show you the library details:
 - What it does
@@ -55,6 +55,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Maintainer
 
-Primary maintainer: [fchn289](https://github.com/fchn289)  
-Contribution history: [GitHub contributors](https://github.com/domino-library/domino-library/graphs/contributors)  
+Primary maintainer: [fchn289](https://github.com/fchn289)
+Contribution history: [GitHub contributors](https://github.com/domino-library/domino-library/graphs/contributors)
 Contact: fchn289@gmail.com

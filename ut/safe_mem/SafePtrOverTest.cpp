@@ -237,4 +237,34 @@ TEST(SafePtrOverTest, ctorExcept_returnsNull)
     EXPECT_FALSE(make_over<E>());
 }
 
+// Identity, not value. Both orders with SafePtr, and both results of == / !=.
+TEST(SafePtrOverTest, cmp_sameObject)
+{
+    auto a = make_over<int>(1);
+    auto b = make_over<int>(1);
+    SafePtr<int> sp = a;
+    SafePtr<int> other = b;
+    SafePtrOver<int> empty;
+    SafePtr<int> null;
+
+    EXPECT_TRUE(a == a);
+    EXPECT_TRUE(a == sp);
+    EXPECT_TRUE(sp == a);
+    EXPECT_FALSE(a != sp);
+    EXPECT_FALSE(sp != a);
+
+    EXPECT_FALSE(a == b);
+    EXPECT_TRUE(a != b);
+    EXPECT_FALSE(a == other);
+    EXPECT_TRUE(other != a);
+    EXPECT_FALSE(sp == b);
+    EXPECT_TRUE(b != sp);
+
+    EXPECT_TRUE(empty == null);
+    EXPECT_TRUE(null == empty);
+    EXPECT_FALSE(empty != null);
+    EXPECT_FALSE(empty == a);
+    EXPECT_TRUE(empty != a);
+}
+
 }  // namespace
