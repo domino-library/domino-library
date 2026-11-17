@@ -30,7 +30,12 @@ jobs:
       run: |
         fail=0
         while IFS= read -r f; do
-          grep -q 'SPDX-License-Identifier: BSD-3-Clause' "$f" || { echo "FAIL $f: SPDX"; fail=1; }
+          case "$f" in
+            src/safe_mem/SafePtrOver.hpp|ut/safe_mem/SafePtrOverTest.cpp|src/thread/MT_SafeThEntryFN.hpp|src/thread/MT_SafeThEntryFN.cpp)
+              grep -q 'SPDX-License-Identifier: PolyForm-Small-Business-1.0.0' "$f" || { echo "FAIL $f: SPDX"; fail=1; } ;;
+            *)
+              grep -q 'SPDX-License-Identifier: BSD-3-Clause' "$f" || { echo "FAIL $f: SPDX"; fail=1; } ;;
+          esac
           grep -qE 'Copyright [0-9]{4} Shi-Zhong Chen' "$f" || { echo "FAIL $f: Chen"; fail=1; }
         done < <(git ls-files -- '*.hpp' '*.cpp' '*.py' '*.sh' '*CMakeLists.txt')
         exit $fail

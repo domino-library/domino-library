@@ -6,10 +6,6 @@
  */
 // ***********************************************************************************************
 #include <gtest/gtest.h>
-
-#include <utility>
-
-#include "UniLog.hpp"
 #include "ObjAnywhere.hpp"
 
 using namespace testing;

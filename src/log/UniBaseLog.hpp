@@ -112,10 +112,15 @@ namespace rlib { inline bool traceOn_ = (std::getenv("TRACE_OFF") == nullptr); }
 namespace rlib
 {
 // ***********************************************************************************************
+// defined below: function-local static, so a log during static init still has a mutex
+inline std::recursive_mutex& coutMutex_() noexcept;
+
+// ***********************************************************************************************
 // - MT safe : yes (aStr is const ref)
 // - mem safe: yes
 inline void cout_ascii(const std::string& aStr) noexcept
 {
+    std::lock_guard<std::recursive_mutex> guard(coutMutex_());  // sync_with_stdio(false) drops cout's own lock
     try {  // cout may except(eg ios_base::failure) though rare; try-catch is safest as a log
         std::string buf;
         buf.reserve(aStr.size() * 2);

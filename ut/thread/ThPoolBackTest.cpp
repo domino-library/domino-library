@@ -16,6 +16,12 @@ using std::chrono::microseconds;
 
 namespace rlib
 {
+namespace {
+std::atomic<bool> g_canEnd{false};  // worker may poll; a pointer arg is not an entry arg
+std::atomic<bool> g_rejected{false};
+std::atomic<bool> g_inTask{false};
+ThPoolBack* g_pool = nullptr;       // dtor test watches the pool's own stop flag
+}
 // ***********************************************************************************************
 TEST_F(ThPoolBackTest, performance)
 {
@@ -28,7 +34,7 @@ TEST_F(ThPoolBackTest, performance)
             []  // entryFn
             {
                 std::this_thread::yield();  // hung like real time-cost task
-                return make_safe<bool>(true);
+                return make_over<bool>(true);
             },
             [](SafePtr<void>) {}  // backFn
         ));
@@ -46,7 +52,7 @@ TEST_F(ThPoolBackTest, performance)
             []  // entryFn
             {
                 std::this_thread::yield();  // hung like real time-cost task
-                return make_safe<bool>(true);
+                return make_over<bool>(true);
             },
             [](SafePtr<void>) {}  // backFn
         ));
@@ -59,14 +65,15 @@ TEST_F(ThPoolBackTest, performance)
 // ***********************************************************************************************
 TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
 {
-    std::atomic<bool> canEnd(false);
+    g_canEnd = false;
+    g_rejected = false;
     ThPoolBack myPool(1, 3);  // 1 thread, capacity=3
 
     // 1st task: block the only thread
     EXPECT_TRUE(myPool.limitNewTaskOK(
-        [&canEnd] {
-            while (not canEnd) std::this_thread::yield();
-            return make_safe<bool>(true);
+        []() -> SafePtrOver<void> {
+            while (not g_canEnd) std::this_thread::yield();
+            return make_over<bool>(true);
         },
         [](SafePtr<void>) {}
     )) << "REQ: 1st task OK (running)";
@@ -75,61 +82,62 @@ TEST_F(ThPoolBackTest, GOLD_limitNewTaskOK_rejectWhenFull_then_acceptWhenFreed)
 
     // 2nd & 3rd tasks queue up
     EXPECT_TRUE(myPool.limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     )) << "REQ: 2nd task OK";
 
     EXPECT_TRUE(myPool.limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     )) << "REQ: 3rd task OK";
 
     // 4th task: rejected (full)
-    std::atomic<bool> rejectedRan{false};
     EXPECT_FALSE(myPool.limitNewTaskOK(
-        [&rejectedRan] {
-            rejectedRan = true;
-            return make_safe<bool>(true);
+        []() -> SafePtrOver<void> {
+            g_rejected = true;
+            return make_over<bool>(true);
         },
         [](SafePtr<void>) {}
     )) << "REQ: rejected when full";
 
     // release and accept
-    canEnd = true;
+    g_canEnd = true;
     while (myPool.hdlDoneFut() == 0)
         timedwait();
 
     EXPECT_TRUE(myPool.limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     )) << "REQ: accept after slot freed";
 
     drainDoneFut(myPool);
-    EXPECT_FALSE(rejectedRan.load()) << "REQ: rejected task never runs";
+    EXPECT_FALSE(g_rejected.load()) << "REQ: rejected task never runs";
 }
 
 // ***********************************************************************************************
 // task1 returns only after stop, so the worker exits without taking the queued task2
 TEST_F(ThPoolBackTest, dtor_discards_finished_and_queued_backFN)
 {
-    std::atomic<bool> inTask{false};
+    g_inTask = false;
     std::atomic<int> nBack{0};
     {
         ThPoolBack pool(1, 2);
+        g_pool = &pool;
         EXPECT_TRUE(pool.newTaskOK(
-            [&] {
-                inTask = true;
-                while (!pool.mt_stopping_forUt()) std::this_thread::yield();
-                return make_safe<bool>(true);
+            []() -> SafePtrOver<void> {
+                g_inTask = true;
+                while (g_pool && !g_pool->mt_stopping_forUt()) std::this_thread::yield();
+                return make_over<bool>(true);
             },
             [&](SafePtr<void>) { nBack += 1; }
         ));
-        while (!inTask) std::this_thread::yield();  // else stop may come before task1 starts
+        while (!g_inTask) std::this_thread::yield();  // else stop may come before task1 starts
         EXPECT_TRUE(pool.newTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [&](SafePtr<void>) { nBack += 10; }
         ));
     }
+    g_pool = nullptr;
     EXPECT_EQ(0, nBack.load()) << "REQ: dtor drops the finished backFN and the queued one";
 }
 
@@ -140,11 +148,17 @@ TEST_F(ThPoolBackTest, maxTaskQ_0_forced_to_default)
     for (int i = 0; i < 100; ++i)
     {
         EXPECT_TRUE(myPool.limitNewTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [](SafePtr<void>) {}
         )) << "REQ: 0 forced to default";
     }
     drainDoneFut(myPool);
+}
+
+TEST_F(ThPoolBackTest, bugFix_hugeCap_throws)
+{
+    ASSERT_GT(size_t(-1), (std::vector<std::thread>{}.max_size()));
+    EXPECT_THROW((ThPoolBack{size_t(-1), 1}), std::length_error);
 }
 
 }  // namespace

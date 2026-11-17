@@ -608,4 +608,43 @@ TEST_F(UniCoutLogTest, wrn_flushesToFile)
     std::remove(fname.c_str());
 }
 
+// cout can throw ios_base::failure. Both formatters swallow it and leave the stream usable.
+TEST_F(UniCoutLogTest, bugFix_coutFailure_swallowed)
+{
+    struct Guard
+    {
+        std::ios_base::iostate ex_ = std::cout.exceptions();
+        ~Guard()
+        {
+            std::cout.exceptions(std::ios::goodbit);
+            std::cout.clear();
+            std::cout.exceptions(ex_);
+        }
+    } guard;
+    std::cout.exceptions(std::ios::badbit);
+    try { std::cout.setstate(std::ios::badbit); }
+    catch (const std::ios_base::failure&) {}
+    cout_ascii("x");
+    EXPECT_FALSE(UniCoutLog::setLogFileOK("")) << "REQ: a throwing cout does not escape setLogFileOK";
+    std::cout.exceptions(std::ios::goodbit);
+    std::cout.clear();
+    EXPECT_TRUE(UniCoutLog::setLogFileOK("")) << "REQ: cout works again after the failure is cleared";
+}
+
+// cout_ascii writes cout. oneLog() holds coutMutex_ for the whole line. Both must share that lock.
+TEST_F(UniCoutLogTest, bugFix_coutAscii_otherThread_withOneLog)
+{
+    std::atomic<bool> go{false};
+    std::thread worker([&]
+    {
+        while (!go.load()) std::this_thread::yield();
+        for (int i = 0; i < 200; ++i)
+            cout_ascii("worker\n");
+    });
+    go.store(true);
+    for (int i = 0; i < 200; ++i)
+        INF("main " << i);
+    worker.join();
+}
+
 }  // namespace rlib

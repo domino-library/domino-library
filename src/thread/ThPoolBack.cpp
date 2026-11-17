@@ -123,7 +123,7 @@ size_t ThPoolBack::hdlDoneFut(UniLog& oneLog) noexcept
     {
         auto& task = done.front();
         --nInFlight_;  // before backFN, so limitNewTaskOK sees the freed slot
-        try { task.backFN_(move(task.mt_ret_)); }
+        try { task.backFN_(SafePtr<void>(std::move(task.mt_ret_))); }  // crossed
         catch (...) { ERR("(ThPoolBack) backFN() except=" << mt_exceptInfo()); }
         done.pop_front();  // ~backFN on this (main) thread
         ++nHandled;
@@ -132,7 +132,7 @@ size_t ThPoolBack::hdlDoneFut(UniLog& oneLog) noexcept
 }
 
 // ***********************************************************************************************
-bool ThPoolBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLog& oneLog) noexcept
+bool ThPoolBack::newTaskOK_(MT_SafeThEntryFN mt_aEntryFN, UsrBackFN aBackFN, UniLog& oneLog) noexcept
 {
     try {
         if (! newTaskArgOK_(mt_aEntryFN, aBackFN, oneLog))

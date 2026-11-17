@@ -22,7 +22,7 @@ MtInQueue::~MtInQueue() noexcept
 }
 
 // ***********************************************************************************************
-deque<SafePtr<void>>::iterator MtInQueue::begin_() noexcept
+deque<SafePtrOver<void>>::iterator MtInQueue::begin_() noexcept
 {
     if (cache_.empty())
     {
@@ -44,31 +44,25 @@ deque<SafePtr<void>>::iterator MtInQueue::begin_() noexcept
 }
 
 // ***********************************************************************************************
-size_t MtInQueue::handleCacheEle_() noexcept
+void MtInQueue::clearAll() noexcept
 {
-    const auto nEle = cache_.size();
-    while (! cache_.empty())
+    if (! mt_reqMainTH(__func__))
+        return;
+
+    // Don't destruct user objects while holding mt_mutex_: their destructor may re-enter mt_pushOK().
+    deque<SafePtrOver<void>> discarded;
     {
-        auto ele = move(cache_.front());  // avoid cp; lastType_ is the type key
-        cache_.pop_front();
-        const auto tid = ele.lastType();
+        lock_guard guard(mt_mutex_);
+        discarded.swap(mt_queue_);
+    }
+    cache_.clear();  // can't access outside main thread!!!
+    decltype(tid_hdlr_S_)().swap(tid_hdlr_S_);
+}
 
-        auto&& id_hdlr = find_if(
-            tid_hdlr_S_.begin(), tid_hdlr_S_.end(),
-            [&](auto& tid_hdlr) { return tid_hdlr.first == tid; }
-        );
-        if (id_hdlr == tid_hdlr_S_.end())
-        {
-            WRN("(MtQ) discard 1 ele(=" << tid.name() << ") since no handler.");
-            continue;
-        }
-
-        try { id_hdlr->second(std::move(ele)); }
-        catch(...) {
-            ERR("(MtQ) hdlr() except=" << mt_exceptInfo() << ", tid=" << tid.name());
-        }  // continue next ele
-    }  // while
-    return nEle;
+// ***********************************************************************************************
+void MtInQueue::clearHdlrPool() noexcept
+{
+    decltype(tid_hdlr_S_)().swap(tid_hdlr_S_);
 }
 
 // ***********************************************************************************************
@@ -93,19 +87,50 @@ size_t MtInQueue::handleAllEle() noexcept
 }
 
 // ***********************************************************************************************
-void MtInQueue::clearAll() noexcept
+size_t MtInQueue::handleCacheEle_() noexcept
 {
-    if (! mt_reqMainTH(__func__))
-        return;
-
-    // Don't destruct user objects while holding mt_mutex_: their destructor may re-enter mt_pushOK().
-    deque<SafePtr<void>> discarded;
+    const auto nEle = cache_.size();
+    while (! cache_.empty())
     {
-        lock_guard guard(mt_mutex_);
-        discarded.swap(mt_queue_);
-    }
-    cache_.clear();  // can't access outside main thread!!!
-    decltype(tid_hdlr_S_)().swap(tid_hdlr_S_);
+        auto ele = move(cache_.front());  // avoid cp; lastType_ is the type key
+        cache_.pop_front();
+        const auto tid = ele.lastType();
+
+        auto&& id_hdlr = find_if(
+            tid_hdlr_S_.begin(), tid_hdlr_S_.end(),
+            [&](auto& tid_hdlr) { return tid_hdlr.first == tid; }
+        );
+        if (id_hdlr == tid_hdlr_S_.end())
+        {
+            WRN("(MtQ) discard 1 ele(=" << tid.name() << ") since no handler.");
+            continue;
+        }
+
+        // Copy first. setHdlrOK()/clearHdlrPool() may reallocate or drop tid_hdlr_S_
+        // while this call is still on the stack.
+        try {
+            EleHdlr hdlr = id_hdlr->second;
+            hdlr(SafePtr<void>(std::move(ele)));  // crossed
+        }
+        catch(...) {
+            ERR("(MtQ) hdlr() except=" << mt_exceptInfo() << ", tid=" << tid.name());
+        }  // continue next ele
+    }  // while
+    return nEle;
+}
+
+// ***********************************************************************************************
+SafePtrOver<void> MtInQueue::pop() noexcept
+{
+    // nothing
+    auto&& it = begin_();
+    if (it == cache_.end())
+        return nullptr;
+
+    // pop
+    auto ele = move(*it);  // take it out before pop; a ref into cache_ dangles after pop_front
+    cache_.pop_front();
+    return ele;
 }
 
 // ***********************************************************************************************
@@ -129,24 +154,10 @@ size_t MtInQueue::size(bool canBlock) const noexcept
 }
 
 // ***********************************************************************************************
-SafePtr<void> MtInQueue::pop() noexcept
-{
-    // nothing
-    auto&& it = begin_();
-    if (it == cache_.end())
-        return nullptr;
-
-    // pop
-    auto ele = move(*it);  // take it out before pop; a ref into cache_ dangles after pop_front
-    cache_.pop_front();
-    return ele;
-}
-
-// ***********************************************************************************************
 MtInQueue& mt_getQ() noexcept
 {
     // - not exist if nobody call this func
-    // - c++14 support MT safe for static var
+    // - c++11: function-local static init is MT safe
     // - can't via ObjAnywhere that's not MT safe
     static MtInQueue s_mtQ;
 

@@ -11,7 +11,7 @@
 
 namespace rlib
 {
-alignas(64) MT_Notifier g_notifMainTH;
+alignas(64) MT_Notifier mt_g_notifMainTH;
 
 // ***********************************************************************************************
 // - better than in hpp: avoid multi-copy in diff cpp/lib

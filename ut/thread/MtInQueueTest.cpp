@@ -52,8 +52,8 @@ struct MtInQueueTest : public Test, public UniLog
 // ***********************************************************************************************
 TEST_F(MtInQueueTest, GOLD_simple_fifo)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(2)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(2)));
     EXPECT_EQ(1, *(mt_getQ().pop<int>().get())) << "REQ: fifo";
     EXPECT_EQ(2, *(mt_getQ().pop<int>().get())) << "REQ: fifo";
 }
@@ -64,7 +64,7 @@ TEST_F(MtInQueueTest, GOLD_sparsePush_fifo)
     {
         for (int i = 0; i < nMsg; i++)
         {
-            if (!mt_getQ().mt_pushOK(new_safe<int>(i)))
+            if (!mt_getQ().mt_pushOK(make_over<int>(i)))
             {
                 ADD_FAILURE() << "REQ: push OK";
                 return;
@@ -99,7 +99,7 @@ TEST_F(MtInQueueTest, GOLD_surgePush_fifo)
     {
         for (int i = 0; i < nMsg; i++)
         {
-            if (!mt_getQ().mt_pushOK(new_safe<int>(i)))  // surge push
+            if (!mt_getQ().mt_pushOK(make_over<int>(i)))  // surge push
             {
                 ADD_FAILURE() << "REQ: push OK";
                 return;
@@ -126,8 +126,8 @@ TEST_F(MtInQueueTest, GOLD_surgePush_fifo)
 // ***********************************************************************************************
 TEST_F(MtInQueueTest, pushWakeup_popNoBlockAndWakeup)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<string>("1st"))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<string>("2nd"))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<string>("1st"))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<string>("2nd"))) << "REQ: push OK";
     {
         auto guard = mt_getQ().lockBackdoor();
         timedwait(600);  // REQ: not blocked 10min but waked by prev push
@@ -144,55 +144,61 @@ TEST_F(MtInQueueTest, pushWakeup_popNoBlockAndWakeup)
 }
 TEST_F(MtInQueueTest, push_null_NOK)
 {
-    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(SafePtr<int>())) << "REQ: push null int NOK";
+    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(SafePtrOver<int>())) << "REQ: push null int NOK";
     EXPECT_EQ(0, mt_getQ().size(true)) << "REQ: can't push nullptr since pop empty will ret nullptr";
 }
-TEST_F(MtInQueueTest, push_takeover_toEnsureMtSafe)
+TEST_F(MtInQueueTest, push_moveOnly_emptiesSender)
 {
-    auto ele = new_safe<int>(1);
-    auto e2  = ele;
-    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(move(ele))) << "REQ: push failed since can't takeover ele";
-    EXPECT_EQ(0, mt_getQ().size(true)) << "REQ: push failed since can't takeover ele";
+    static_assert(!std::is_copy_constructible_v<SafePtrOver<int>>);
+    static_assert(!std::is_constructible_v<SafePtrOver<int>, SafePtr<int>>);
+    static_assert(std::is_convertible_v<SafePtrOver<int>&, const SafePtr<int>&>);
+    static_assert(std::is_constructible_v<SafeWeak<int>, SafePtrOver<int>&>);
 
-    e2 = nullptr;
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(move(ele))) << "REQ: push succ since takeover";
-    EXPECT_EQ(1, mt_getQ().size(true)) << "REQ: push succ since takeover";
-    EXPECT_EQ(0, ele.use_count())      << "REQ: own nothing after push";
+    auto ele = make_over<int>(1);
+    auto moved = std::move(ele);
+    EXPECT_FALSE(mt_getQ().mt_pushOK<int>(std::move(ele))) << "REQ: moved-from SafePtrOver is empty";
+    EXPECT_EQ(0, mt_getQ().size(true));
+
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(std::move(moved))) << "REQ: the live owner pushes";
+    EXPECT_FALSE(moved) << "REQ: sender owns nothing after push";
+    EXPECT_EQ(1, mt_getQ().size(true));
 }
-// use_count() ignores weak refs; handover must still cut them
-TEST_F(MtInQueueTest, push_safeWeak_cannotReachQueuedEle)
+// SafeWeak binds through SafePtr. detachWeak() on push expires it.
+TEST_F(MtInQueueTest, push_noWeakBeforeShare)
 {
-    auto ele = new_safe<int>(7);
-    SafeWeak<int> weak(ele);
-    std::weak_ptr<int> stdWeak;
-    {
-        auto sp = ele.get();  // the shared_ptr get() hands out
-        stdWeak = sp;
-    }
-    ASSERT_NE(nullptr, weak.lock().get()) << "fixture: SafeWeak reaches ele before push";
-    ASSERT_FALSE(stdWeak.expired()) << "fixture: weak_ptr reaches ele before push";
-
-    ASSERT_TRUE(mt_getQ().mt_pushOK<int>(move(ele))) << "REQ: sole new_safe can push";
-    EXPECT_EQ(0, ele.use_count()) << "REQ: sender's SafePtr is taken";
-    EXPECT_EQ(nullptr, weak.lock().get()) << "REQ: SafeWeak taken before push can't reach the queued ele";
-    EXPECT_TRUE(stdWeak.expired()) << "REQ: weak_ptr from get() can't reach the queued ele";
+    auto ele = make_over<int>(7);
+    ASSERT_TRUE(mt_getQ().mt_pushOK<int>(std::move(ele))) << "REQ: SafePtrOver pushes";
+    EXPECT_FALSE(ele);
     auto popped = mt_getQ().pop<int>();
     EXPECT_EQ(7, *popped.get()) << "REQ: queued value intact";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(move(popped))) << "REQ: popped ele can be pushed again";
+    static_assert(std::is_constructible_v<SafeWeak<int>, decltype(popped)&>);
+    EXPECT_TRUE(mt_getQ().mt_pushOK(std::move(popped))) << "REQ: the same SafePtrOver can be pushed again";
 }
-// make_safe's object lives in its ctrl blk, so it can't be handed over
-TEST_F(MtInQueueTest, push_makeSafe_NOK)
+TEST_F(MtInQueueTest, push_afterGet_keepsCaller)
 {
+    auto ele = make_over<int>(7);
+    auto kept = ele.get();
+    EXPECT_FALSE(mt_getQ().mt_pushOK(std::move(ele))) << "REQ: a shared_ptr from get() blocks push";
+    EXPECT_TRUE(ele) << "REQ: refusal leaves the SafePtrOver";
+    EXPECT_EQ(7, *ele.get());
+    EXPECT_EQ(0u, mt_getQ().size(true));
+
+    kept = nullptr;
+    std::weak_ptr<int> weak = ele.get();
+    EXPECT_TRUE(mt_getQ().mt_pushOK(std::move(ele))) << "REQ: push once the shared_ptr is gone";
+    EXPECT_FALSE(ele);
+    EXPECT_TRUE(weak.expired()) << "REQ: detachWeak expires a weak taken from get()";
+}
+TEST_F(MtInQueueTest, push_safePtr_isNotAnInput)
+{
+    static_assert(!std::is_constructible_v<SafePtrOver<int>, SafePtr<int>&&>);
     auto ele = make_safe<int>(7);
     SafeWeak<int> weak(ele);
-    ASSERT_FALSE(mt_getQ().mt_pushOK<int>(move(ele))) << "REQ: make_safe can't be pushed";
-    EXPECT_EQ(1, ele.use_count()) << "REQ: rejected push leaves the SafePtr";
-    EXPECT_EQ(7, *ele.get()) << "REQ: value untouched";
-    EXPECT_EQ(7, *weak.lock().get()) << "REQ: SafeWeak still reaches it";
+    EXPECT_EQ(7, *weak.lock().get()) << "REQ: SafePtr stays shared on this thread";
     EXPECT_EQ(0u, mt_getQ().size(true));
 }
-// handover keeps the object (no move), so base/immovable/2nd-base all work
-TEST_F(MtInQueueTest, push_handover_keepsObject)
+// moving to SafePtr moves the pointer, not T, so base/immovable/2nd-base all keep the created object
+TEST_F(MtInQueueTest, push_share_keepsObject)
 {
     // derived as base; base has no virtual dtor, so only the real deleter is correct
     {
@@ -204,11 +210,9 @@ TEST_F(MtInQueueTest, push_handover_keepsObject)
             ~DerivedNV() { ++*hits_; }
         };
         int hits = 0;
-        auto ele = new_safe<DerivedNV>(hits);
-        SafeWeak<DerivedNV> weak(ele);
-        ASSERT_TRUE(mt_getQ().mt_pushOK<BaseNV>(SafePtr<BaseNV>(move(ele))));
+        auto ele = make_over<DerivedNV>(hits);
+        ASSERT_TRUE(mt_getQ().mt_pushOK<BaseNV>(SafePtrOver<BaseNV>(std::move(ele))));
         EXPECT_EQ(0, hits) << "REQ: push keeps the derived object (no slice)";
-        EXPECT_EQ(nullptr, weak.lock().get()) << "REQ: SafeWeak cut on base push";
         EXPECT_EQ(1, mt_getQ().pop<BaseNV>().get()->x_);
         EXPECT_EQ(1, hits) << "REQ: ~DerivedNV runs once";
     }
@@ -223,11 +227,9 @@ TEST_F(MtInQueueTest, push_handover_keepsObject)
             ~Mid() { ++*hits_; }
         };
         int hits = 0;
-        auto ele = new_safe<Mid>(hits);
-        SafeWeak<Mid> weak(ele);
-        ASSERT_TRUE(mt_getQ().mt_pushOK<B2>(SafePtr<B2>(move(ele))));
+        auto ele = make_over<Mid>(hits);
+        ASSERT_TRUE(mt_getQ().mt_pushOK<B2>(SafePtrOver<B2>(std::move(ele))));
         EXPECT_EQ(0, hits) << "REQ: push keeps Mid (no slice)";
-        EXPECT_EQ(nullptr, weak.lock().get()) << "REQ: SafeWeak cut on 2nd-base push";
         EXPECT_EQ(2, mt_getQ().pop<B2>().get()->b_);
         EXPECT_EQ(1, hits) << "REQ: ~Mid runs once";
     }
@@ -240,10 +242,8 @@ TEST_F(MtInQueueTest, push_handover_keepsObject)
             Imm(const Imm&) = delete;
             Imm(Imm&&) = delete;
         };
-        auto ele = new_safe<Imm>(5);
-        SafeWeak<Imm> weak(ele);
-        ASSERT_TRUE(mt_getQ().mt_pushOK<Imm>(move(ele)));
-        EXPECT_EQ(nullptr, weak.lock().get()) << "REQ: SafeWeak cut without moving Imm";
+        auto ele = make_over<Imm>(5);
+        ASSERT_TRUE(mt_getQ().mt_pushOK<Imm>(std::move(ele)));
         EXPECT_EQ(5, mt_getQ().pop<Imm>().get()->v_);
     }
 }
@@ -266,8 +266,8 @@ TEST_F(MtInQueueTest, popMismatchType)
         ~FlagObj() { if (gone_) *gone_ = true; }
     };
     bool gone = false;
-    EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<FlagObj>(gone))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(11))) << "REQ: next ele";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<FlagObj>(gone))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(11))) << "REQ: next ele";
     ASSERT_FALSE(gone);
 
     EXPECT_EQ(nullptr, mt_getQ().pop<int>().get()) << "REQ: type mismatch returns nullptr";
@@ -289,7 +289,7 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
     ASSERT_EQ(0u, mt_getQ().size(true )) << "REQ: blocked init";
     ASSERT_EQ(0u, mt_getQ().size(false)) << "REQ: unblocked init";
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
     ASSERT_EQ(1u, mt_getQ().size(true )) << "REQ: inc blocked size";
     ASSERT_EQ(1u, mt_getQ().size(false)) << "REQ: inc unblocked size";
 
@@ -298,12 +298,12 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
         ASSERT_EQ(0u, mt_getQ().size(false)) << "REQ: sizeQ can be unblocked (blocked will hang)";
     }
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(2))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(2))) << "REQ: push OK";
     EXPECT_EQ(1, *mt_getQ().pop<int>().get());
     ASSERT_EQ(1u, mt_getQ().size(true )) << "REQ: dec blocked size";
     ASSERT_EQ(1u, mt_getQ().size(false)) << "REQ: dec unblocked size";
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(3))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(3))) << "REQ: push OK";
     ASSERT_EQ(2u, mt_getQ().size(true )) << "REQ: re-inc blocked size (now 1 in cache_, 1 in queue)";
     ASSERT_EQ(2u, mt_getQ().size(false)) << "REQ: re-inc unblocked size";
 
@@ -314,10 +314,10 @@ TEST_F(MtInQueueTest, sizeQ_block_nonBlock)
 }
 TEST_F(MtInQueueTest, mainThread_boundaries_wrongThread_rejected)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1)));
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(2)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1)));
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(2)));
     EXPECT_EQ(1, *mt_getQ().pop<int>().get());  // 1 in cache_
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(3)));  // 1 in mt_queue_
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(3)));  // 1 in mt_queue_
     EXPECT_TRUE(mt_getQ().setHdlrOK<int>([](SafePtr<void>){}));
 
     size_t wrongThreadSize = size_t(-1);
@@ -350,7 +350,7 @@ struct LifeEle
 TEST_F(MtInQueueTest, destruct_right_type)
 {
     bool isDestructed;
-    EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<LifeEle>(isDestructed))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<LifeEle>(isDestructed))) << "REQ: push OK";
     ASSERT_FALSE(isDestructed);
 
     mt_getQ().clearAll();
@@ -358,11 +358,11 @@ TEST_F(MtInQueueTest, destruct_right_type)
 }
 TEST_F(MtInQueueTest, clear_queue_cache_hdlr)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(2))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(2))) << "REQ: push OK";
     auto popped = mt_getQ().pop();
     EXPECT_NE(nullptr, popped.get()) << "REQ: pop from cache";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(3))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(3))) << "REQ: push OK";
 
     {
         auto guard = mt_getQ().lockBackdoor();
@@ -380,7 +380,7 @@ TEST_F(MtInQueueTest, clear_queue_cache_hdlr)
 TEST_F(MtInQueueTest, cov_destructor)
 {
     MtInQueue mtQ;  // cov destructor with ele left
-    EXPECT_TRUE(mtQ.mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mtQ.mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
 
     MtInQueue mtQ2;  // cov destructor without ele left
 }
@@ -393,11 +393,11 @@ TEST_F(MtInQueueTest, GOLD_handle_bothCacheAndQueue_ifPossible_withoutBlocked)
     // init
     size_t nCalled = 0;
     EXPECT_TRUE(mt_getQ().setHdlrOK<int>([&nCalled](SafePtr<void>){ ++nCalled; })) << "REQ: set hdlr";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
     auto popped = mt_getQ().pop();  // still 1 ele in cache_
     EXPECT_NE(nullptr, popped.get()) << "REQ: pop from cache";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";  // and 1 ele in queue_
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";  // and 1 ele in queue_
     EXPECT_EQ(2u, mt_getQ().size(true));
 
     {
@@ -428,29 +428,29 @@ TEST_F(MtInQueueTest, handle_via_base)
 {
     struct Base { virtual int value() { return 1; } };
     struct Derive : public Base { int value() override { return 2; } };
-    // mt_getQ().mt_pushOK<Derive>(new_safe<Base>());  // REQ: build err to push Base to Derive
+    // mt_getQ().mt_pushOK<Derive>(make_over<Base>());  // REQ: build err to push Base to Derive
 
-    EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(new_safe<Base>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(make_over<Base>())) << "REQ: push OK";
     EXPECT_EQ(nullptr, mt_getQ().pop<Derive>().get()) << "REQ: pop derive type is invalid";
     EXPECT_EQ(1u, mt_getQ().size(true)) << "REQ: mismatch leaves that element";
 
-    auto d = new_safe<Derive>();
+    auto d = make_over<Derive>();
     EXPECT_TRUE(mt_getQ().mt_pushOK<Base>(move(d))) << "REQ: push OK";
     EXPECT_EQ(2u, mt_getQ().size(true)) << "REQ: can push Derive to Base";
 
     int exp = 1;
     EXPECT_TRUE(mt_getQ().setHdlrOK<Base>([&exp](SafePtr<void> aEle)
     {
-        auto ele = safe_cast<Base>(aEle);
-        EXPECT_NE(nullptr, ele.get());
-        EXPECT_EQ(exp++, ele.get()->value());
+        auto ele = aEle.safe_cast<Base>();
+        EXPECT_NE(nullptr, ele);
+        EXPECT_EQ(exp++, ele->value());
     }));
     mt_getQ().handleAllEle();
     EXPECT_EQ(0u, mt_getQ().size(true)) << "req: Base & Derive are handled correctly";
 }
 TEST_F(MtInQueueTest, noHdlrEle_discard)
 {
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>(1))) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>(1))) << "REQ: push OK";
     EXPECT_EQ(1u, mt_getQ().size(true));
 
     mt_getQ().handleAllEle();
@@ -464,10 +464,52 @@ TEST_F(MtInQueueTest, hdlr_except)
         ++step;
         throw runtime_error("MtQ hdlr except");
     })) << "REQ: set hdlr";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>())) << "REQ: push OK";
-    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(new_safe<int>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>())) << "REQ: push OK";
+    EXPECT_TRUE(mt_getQ().mt_pushOK<int>(make_over<int>())) << "REQ: push OK";
     EXPECT_EQ(2u, mt_getQ().handleAllEle()) << "REQ: handled 2 elements";
     EXPECT_EQ(2, step) << "REQ: hdlr called";
+}
+// clearHdlrPool() swaps away tid_hdlr_S_ while this hdlr is still on the stack.
+// The capture must stay alive until the call returns.
+TEST_F(MtInQueueTest, bugFix_hdlr_clearPool_keepsRunningCapture)
+{
+    struct Pin
+    {
+        int* n_;
+        explicit Pin(int* aN) : n_(aN) { ++*n_; }
+        Pin(const Pin& aSrc) : n_(aSrc.n_) { ++*n_; }
+        Pin& operator=(const Pin&) = delete;
+        ~Pin() { --*n_; }
+    };
+    int alive = 0;
+    ASSERT_TRUE(mt_getQ().setHdlrOK<int>([&alive, pin = Pin(&alive)](SafePtr<void>)
+    {
+        int* n = &alive;  // stack copy: the closure itself dies if the pool drops this hdlr
+        EXPECT_EQ(2, *n) << "REQ: stored hdlr plus the call's copy";
+        (void)pin;
+        mt_getQ().clearHdlrPool();
+        EXPECT_EQ(1, *n) << "REQ: running hdlr outlives clearHdlrPool";
+    })) << "REQ: set hdlr";
+    EXPECT_EQ(1, alive);
+    ASSERT_TRUE(mt_getQ().mt_pushOK(make_over<int>(1)));
+    EXPECT_EQ(1u, mt_getQ().handleAllEle());
+    EXPECT_EQ(0, alive) << "REQ: capture dies after the call returns";
+    EXPECT_EQ(0u, mt_getQ().nHdlr());
+}
+// setHdlrOK() can reallocate tid_hdlr_S_ under the running hdlr. The call must finish.
+TEST_F(MtInQueueTest, bugFix_hdlr_setHdlr_duringCall)
+{
+    int step = 0;
+    ASSERT_TRUE(mt_getQ().setHdlrOK<int>([&step](SafePtr<void>)
+    {
+        struct Another {};
+        EXPECT_TRUE(mt_getQ().setHdlrOK<Another>([](SafePtr<void>){}));
+        ++step;
+    })) << "REQ: set hdlr";
+    ASSERT_TRUE(mt_getQ().mt_pushOK(make_over<int>(1)));
+    EXPECT_EQ(1u, mt_getQ().handleAllEle());
+    EXPECT_EQ(1, step) << "REQ: hdlr runs to the end after setHdlrOK";
+    EXPECT_EQ(2u, mt_getQ().nHdlr());
 }
 
 }  // namespace

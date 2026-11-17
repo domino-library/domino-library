@@ -6,6 +6,8 @@
  */
 // ***********************************************************************************************
 
+#include <atomic>
+
 #include "MtInQueue.hpp"
 #include "ThreadBackViaMsgSelf.hpp"
 #include "UtInitObjAnywhere.hpp"
@@ -20,6 +22,11 @@ using namespace testing;
 
 namespace rlib
 {
+// Test-only flags the worker may touch. A pointer arg is not an entry arg.
+// MtShared<atomic> later, if a user must share a flag with a running task.
+inline std::atomic<bool> g_tbCanEnd{false};
+inline std::atomic<int>  g_tbStep{0};
+
 // ***********************************************************************************************
 // - construct with maxInFlight=2 (must be a template so if-constexpr discards the
 //   wrong-type branch; macro-expanded fixtures are non-template, where both branches must compile)
@@ -77,8 +84,8 @@ struct THREAD_BACK_TEST : public UtInitObjAnywhere
 //                                  [main thread]
 //                                       |
 //                                       | std::async()    [new thread]
-//               ThreadBack::newTaskOK() |--------------------->| MT_TaskEntryFN()
-//   [future, TaskBackFN]->fut_backFN_S_ |                      |
+//               ThreadBack::newTaskOK() |--------------------->| MT_SafeThEntryFN()
+//    [future, UsrBackFN]->fut_backFN_S_ |                      |
 //                                       |                      |
 //                                       |                      |
 //                                       |<.....................| future<>
@@ -89,13 +96,13 @@ TEST_F(THREAD_BACK_TEST, GOLD_entryFn_inNewThread_thenBackFn_inMainThread_withTi
     const auto mainTH = mt_getMainTH();
     EXPECT_EQ(mainTH, std::this_thread::get_id()) << "REQ: OK in main thread";
     EXPECT_TRUE(threadBack_.newTaskOK(
-        // MT_TaskEntryFN
-        [mainTH]()
+        // MT_SafeThEntryFN:
+        []()
         {
-            EXPECT_NE(mainTH, std::this_thread::get_id()) << "REQ: in new thread";
-            return make_safe<bool>(true);
+            EXPECT_NE(mt_getMainTH(), std::this_thread::get_id()) << "REQ: in new thread";
+            return make_over<bool>(true);
         },
-        // TaskBackFN
+        // UsrBackFN
         [mainTH](SafePtr<void>)
         {
             EXPECT_EQ(mainTH, std::this_thread::get_id()) << "REQ: in main thread";
@@ -115,16 +122,17 @@ TEST_F(THREAD_BACK_TEST, GOLD_entryFnResult_toBackFn_withoutTimedWait)
     {
         SCOPED_TRACE(idxThread);
         EXPECT_TRUE(threadBack_.newTaskOK(
-            // MT_TaskEntryFN
-            [idxThread]()
+            // MT_SafeThEntryFN
+            [](size_t idxThread) -> SafePtrOver<void>
             {
-                return make_safe<bool>(idxThread % 2 != 0);  // ret true / false
+                return make_over<bool>(idxThread % 2 != 0);  // ret true / false
             },
-            // TaskBackFN
+            // UsrBackFN
             [idxThread](SafePtr<void> aRet)
             {
-                EXPECT_EQ(idxThread % 2 != 0, *(safe_cast<bool>(aRet).get())) << "REQ: check true & false";
-            }
+                EXPECT_EQ(idxThread % 2 != 0, *aRet.safe_cast<bool>()) << "REQ: check true & false";
+            },
+            idxThread
         ));
     }
 
@@ -136,26 +144,26 @@ TEST_F(THREAD_BACK_TEST, GOLD_entryFnResult_toBackFn_withoutTimedWait)
 }
 TEST_F(THREAD_BACK_TEST, canHandle_someThreadDone_whileOtherRunning)
 {
-    std::atomic<bool> canEnd(false);
+    g_tbCanEnd = false;
     EXPECT_TRUE(threadBack_.newTaskOK(
-        // MT_TaskEntryFN
-        [&canEnd]()
+        // MT_SafeThEntryFN
+        []() -> SafePtrOver<void>
         {
-            while (not canEnd)
+            while (not g_tbCanEnd)
                 std::this_thread::yield();  // not end until instruction
-            return make_safe<bool>(true);
+            return make_over<bool>(true);
         },
-        // TaskBackFN
+        // UsrBackFN
         [](SafePtr<void>) {}
     )) << "REQ: newTaskOK";
 
     EXPECT_TRUE(threadBack_.newTaskOK(
-        // MT_TaskEntryFN
+        // MT_SafeThEntryFN
         []()
         {
-            return make_safe<bool>(false);  // quick end
+            return make_over<bool>(false);  // quick end
         },
-        // TaskBackFN
+        // UsrBackFN
         [](SafePtr<void>) {}
     )) << "REQ: newTaskOK";
 
@@ -165,7 +173,7 @@ TEST_F(THREAD_BACK_TEST, canHandle_someThreadDone_whileOtherRunning)
         timedwait();
     }
 
-    canEnd = true;  // 1st thread keep running while 2nd is done
+    g_tbCanEnd = true;  // 1st thread keep running while 2nd is done
     while (threadBack_.hdlDoneFut() == 0)  // no timedwait() so keep occupy cpu
     {
         INF("2nd thread done, wait 1st done...");
@@ -180,12 +188,12 @@ TEST_F(THREAD_BACK_TEST, GOLD_entryFn_notify_insteadof_timeout)
     if (isSoak()) GTEST_SKIP() << "wall-clock upper bound vs nice";
     auto start = std::chrono::high_resolution_clock::now();
     EXPECT_TRUE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },  // entryFn
+        [] { return make_over<bool>(true); },  // entryFn
         [](SafePtr<void>) {}  // backFn
     )) << "REQ: newTaskOK";
     timedwait(0, 500'000'000);  // long timer to ensure thread done beforehand
     auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
-    EXPECT_LT(dur.count(), 500) << "REQ: entryFn end shall notify g_notifMainTH instead of timeout";
+    EXPECT_LT(dur.count(), 500) << "REQ: entryFn end shall notify mt_g_notifMainTH instead of timeout";
 
     while (threadBack_.hdlDoneFut() == 0)  // clear all threads
         timedwait();
@@ -195,42 +203,42 @@ TEST_F(THREAD_BACK_TEST, GOLD_entryFn_notify_insteadof_timeout)
 // ***********************************************************************************************
 TEST_F(THREAD_BACK_TEST, GOLD_except_entryFN_backFN)
 {
-    std::atomic<int> step{0};
+    g_tbStep = 0;
     EXPECT_TRUE(threadBack_.newTaskOK(
-        [&step]  // entryFN()
+        []() -> SafePtrOver<void>
         {
-            ++step;
+            ++g_tbStep;
             throw std::runtime_error("entryFN() exception");
-            return make_safe<bool>(true);
+            return make_over<bool>(true);
         },
-        [&step](SafePtr<void> aRet)  // backFN()
+        [](SafePtr<void> aRet)  // backFN()
         {
-            EXPECT_EQ(1, step.load()) << "REQ: entryFN() executed";
+            EXPECT_EQ(1, g_tbStep.load()) << "REQ: entryFN() executed";
             EXPECT_EQ(nullptr, aRet.get()) << "REQ: entryFN() except -> aRet=null";
-            ++step;
+            ++g_tbStep;
             throw std::runtime_error("backFN() exception");
         }
     ));
     while (threadBack_.hdlDoneFut() < 1) {  // REQ: completion is posted even when entryFN throws
         timedwait();
     }
-    EXPECT_EQ(2, step.load()) << "REQ: backFN() executed";
+    EXPECT_EQ(2, g_tbStep.load()) << "REQ: backFN() executed";
     EXPECT_EQ(0, threadBack_.nFut()) << "REQ: task removed after exceptions";
 }
 TEST_F(THREAD_BACK_TEST, viaMsgSelf_backFN_except_caught)
 {
-    std::atomic<int> step{0};
+    g_tbStep = 0;
     EXPECT_TRUE(threadBack_.newTaskOK(
-        [&step]
+        []() -> SafePtrOver<void>
         {
-            ++step;
-            return make_safe<bool>(true);
+            ++g_tbStep;
+            return make_over<bool>(true);
         },
-        viaMsgSelf([&step](SafePtr<void> aRet)
+        viaMsgSelf([](SafePtr<void> aRet)
         {
-            EXPECT_EQ(1, step.load()) << "REQ: entryFN() executed";
+            EXPECT_EQ(1, g_tbStep.load()) << "REQ: entryFN() executed";
             EXPECT_NE(nullptr, aRet.get());
-            ++step;
+            ++g_tbStep;
             throw std::runtime_error("viaMsgSelf backFN exception");
         })
     ));
@@ -239,7 +247,7 @@ TEST_F(THREAD_BACK_TEST, viaMsgSelf_backFN_except_caught)
     EXPECT_EQ(0, threadBack_.nFut());
     ASSERT_EQ(1u, getMsgSelf()->nMsg()) << "REQ: backFN queued, not run inside hdlDoneFut";
     getMsgSelf()->handleAllMsg();  // REQ: backFN throw is caught inside the MsgCB
-    EXPECT_EQ(2, step.load()) << "REQ: backFN ran";
+    EXPECT_EQ(2, g_tbStep.load()) << "REQ: backFN ran";
     EXPECT_EQ(0u, getMsgSelf()->nMsg());
 }
 TEST_F(THREAD_BACK_TEST, emptyThreadList_ok)
@@ -254,10 +262,10 @@ TEST_F(THREAD_BACK_TEST, submit_wrongThread_rejected)
     std::async(std::launch::async, [&]()
     {
         wrongThreadNewOK = threadBack_.newTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [](SafePtr<void>) {});
         wrongThreadLimitOK = threadBack_.limitNewTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [](SafePtr<void>) {});
     }).get();
 
@@ -265,11 +273,33 @@ TEST_F(THREAD_BACK_TEST, submit_wrongThread_rejected)
     EXPECT_FALSE(wrongThreadLimitOK) << "REQ: reject wrong-thread limitNewTaskOK()";
     EXPECT_EQ(0u, threadBack_.nFut()) << "REQ: no wrong-thread task saved";
 }
+TEST_F(THREAD_BACK_TEST, own_wrongThread_keepsCallerPtr)
+{
+    auto in = make_over<int>(5);
+    bool newOK = true;
+    bool limitOK = true;
+    std::async(std::launch::async, [&]()
+    {
+        newOK = threadBack_.newTaskOK(
+            [](SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+            [](SafePtr<void>) {},
+            std::move(in));
+        limitOK = threadBack_.limitNewTaskOK(
+            [](SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+            [](SafePtr<void>) {},
+            std::move(in));
+    }).get();
+
+    EXPECT_FALSE(newOK) << "REQ: reject wrong-thread newTaskOK()";
+    EXPECT_FALSE(limitOK) << "REQ: reject wrong-thread limitNewTaskOK()";
+    EXPECT_TRUE(in) << "REQ: wrong thread does not take aIn";
+    EXPECT_EQ(0u, threadBack_.nFut());
+}
 TEST_F(THREAD_BACK_TEST, hdlDoneFut_wrongThread_rejected)
 {
     std::atomic<int> nBack{0};
     ASSERT_TRUE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [&nBack](SafePtr<void>) { ++nBack; }));
     threadBack_.waitAllFut_forUt();
 
@@ -291,19 +321,14 @@ TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK<MsgSelf>(nullptr, *this));  // rm so viaMsgSelf sees absent
 
     EXPECT_FALSE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },  // entryFn
+        [] { return make_over<bool>(true); },  // entryFn
         viaMsgSelf([](SafePtr<void>) {})  // invalid since msgSelf==nullptr
     ));
 
     EXPECT_TRUE(ObjAnywhere::emplaceObjOK(kept, *this)) << "REQ: valid getMsgSelf()";
     EXPECT_FALSE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },  // entryFn
+        [] { return make_over<bool>(true); },  // entryFn
         viaMsgSelf(nullptr)  // invalid since backFn==nullptr
-    ));
-
-    EXPECT_FALSE(threadBack_.newTaskOK(
-        MT_TaskEntryFN(),  // invalid entryFn
-        [](SafePtr<void>) {}  // backFn
     ));
 
     EXPECT_EQ(0, threadBack_.nFut());
@@ -311,7 +336,7 @@ TEST_F(THREAD_BACK_TEST, invalid_msgSelf_entryFN_backFN)
 TEST_F(THREAD_BACK_TEST, viaMsgSelf_invalidPri_newMsgOK_fails_noCrash)
 {
     EXPECT_TRUE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         viaMsgSelf([](SafePtr<void>) {}, static_cast<EMsgPriority>(EMsgPri_MAX))
     )) << "REQ: wrap itself ok (MsgSelf present, backFN present)";
 
@@ -360,23 +385,23 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
 
     // setup msg handler table for mt_getQ()
     EXPECT_EQ(0u, mt_getQ().nHdlr())  << "REQ: init no hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([ms, &cb_info](SafePtr<void> aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<std::string>([ms, &cb_info](SafePtr<void> sp)
     {
         EXPECT_TRUE(ms->newMsgOK(  // REQ: via MsgSelf
-            [aMsg, &cb_info]
+            [sp, &cb_info]
             {
-                EXPECT_EQ("a", *(safe_cast<std::string>(aMsg).get()));
+                EXPECT_EQ("a", *(safe_cast<std::string>(sp).get()));
                 cb_info.emplace("REQ: a's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
     })) << "REQ: set hdlr";
     EXPECT_EQ(1u, mt_getQ().nHdlr())  << "REQ: count hdlr";
-    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([ms, &cb_info](SafePtr<void> aMsg)
+    EXPECT_TRUE(mt_getQ().setHdlrOK<int>([ms, &cb_info](SafePtr<void> sp)
     {
         EXPECT_TRUE(ms->newMsgOK(
-            [aMsg, &cb_info]
+            [sp, &cb_info]
             {
-                EXPECT_EQ(2, *(safe_cast<int>(aMsg).get()));
+                EXPECT_EQ(2, *(safe_cast<int>(sp).get()));
                 cb_info.emplace("REQ: 2's Q hdlr via MsgSelf");
             }
         )) << "REQ: enqueue msg";
@@ -387,14 +412,14 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<std::string>("a"))) << "REQ: push OK";
-            return make_safe<bool>(true);
+            EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<std::string>("a"))) << "REQ: push OK";
+            return make_over<bool>(true);
         },
         // backFn
         viaMsgSelf(  // REQ: via MsgSelf
             [this, &cb_info](SafePtr<void> aRet)
             {
-                EXPECT_TRUE(*(safe_cast<bool>(aRet).get())) << "entryFn succ";
+                EXPECT_TRUE(*aRet.safe_cast<bool>()) << "entryFn succ";
                 cb_info.emplace("REQ: a's backFn via MsgSelf");
             }
         )
@@ -402,14 +427,14 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
     EXPECT_TRUE(threadBack_.newTaskOK(
         // entryFn
         [] {
-            EXPECT_TRUE(mt_getQ().mt_pushOK(new_safe<int>(2))) << "REQ: push OK";
-            return make_safe<bool>(true);
+            EXPECT_TRUE(mt_getQ().mt_pushOK(make_over<int>(2))) << "REQ: push OK";
+            return make_over<bool>(true);
         },
         // backFn
         viaMsgSelf(
             [this, &cb_info](SafePtr<void> aRet)
             {
-                EXPECT_TRUE(*(safe_cast<bool>(aRet).get())) << "entryFn succ";
+                EXPECT_TRUE(*aRet.safe_cast<bool>()) << "entryFn succ";
                 cb_info.emplace("REQ: 2's backFn via MsgSelf");
             }
         )
@@ -442,7 +467,7 @@ TEST_F(THREAD_BACK_TEST, GOLD_integrate_MsgSelf_ThreadBack_MtInQueue)  // simula
 }
 TEST_F(THREAD_BACK_TEST, timeout)
 {
-    g_notifMainTH.reset();  // drop leftover posts from prior cases (soak keeps the notifier)
+    mt_g_notifMainTH.reset();  // drop leftover posts from prior cases (soak keeps the notifier)
     timedwait(0, size_t(-1));  // REQ: invalid ns>=1000ms, no die (& clear previous mt_notify if existed)
 
     auto now = std::chrono::high_resolution_clock::now();
@@ -461,7 +486,7 @@ TEST_F(THREAD_BACK_TEST, maxThread_0_forced_to_default)
 {
     THREAD_BACK_TYPE inst(0);  // 0 forced to default
     EXPECT_TRUE(inst.newTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     )) << "REQ: can work with defaulted param";
     while (inst.hdlDoneFut() == 0)
@@ -471,7 +496,7 @@ TEST_F(THREAD_BACK_TEST, maxThread_exceed_default)
 {
     THREAD_BACK_TYPE inst(101);  // user can exceed default
     EXPECT_TRUE(inst.newTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     ));
     while (inst.hdlDoneFut() == 0)
@@ -485,14 +510,14 @@ TEST_F(THREAD_BACK_TEST, limitMax_stays_at_constructMax_evenAfter_nonLimit_grow)
     // non-limit newTaskOK may pass the construct max; limitNewTaskOK must still use that max
     for (int i = 0; i < 3; ++i)
         EXPECT_TRUE(back->newTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [](SafePtr<void>) {}
         )) << "REQ: non-limit newTaskOK allows exceeding max";
     EXPECT_EQ(3u, back->nFut()) << "REQ: 3 saved, past construct max";
 
     // REQ: limit must still honor construct max=2, NOT the grown vector capacity
     EXPECT_FALSE(back->limitNewTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [](SafePtr<void>) {}
     )) << "REQ: reject since nFut(3) >= constructMax(2)";
 
@@ -504,7 +529,7 @@ TEST_F(THREAD_BACK_TEST, dtor_discards_ready_backFN)
     {
         THREAD_BACK_TYPE back(1);
         EXPECT_TRUE(back.newTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [&](SafePtr<void>) { nBack += 1; }
         ));
         back.waitAllFut_forUt();  // ready, not yet pumped
@@ -519,7 +544,7 @@ TEST_F(THREAD_BACK_TEST, hdlDoneFut_doesNotDrain_taskSubmittedByBackFN)
 {
     std::atomic<int> nested{0};
     EXPECT_TRUE(threadBack_.newTaskOK(
-        [] { return make_safe<bool>(true); },
+        [] { return make_over<bool>(true); },
         [&](SafePtr<void>)
         {
             if (threadBack_.nFut() != 0)
@@ -528,8 +553,8 @@ TEST_F(THREAD_BACK_TEST, hdlDoneFut_doesNotDrain_taskSubmittedByBackFN)
                 return;  // else ThPoolBack::waitAllFut_forUt deadlocks
             }
             EXPECT_TRUE(threadBack_.newTaskOK(
-                [] { return make_safe<int>(7); },
-                [&](SafePtr<void> aRet) { nested = *(safe_cast<int>(aRet).get()); }
+                [] { return make_over<int>(7); },
+                [&](SafePtr<void> aRet) { nested = *aRet.safe_cast<int>(); }
             )) << "REQ: backFN may submit";
             if (threadBack_.nFut() != 1)
             {
@@ -562,12 +587,12 @@ TEST_F(THREAD_BACK_TEST, limitNewTaskOK_fromBackFN_seesFreedSlot)
     for (int i = 0; i < 2; ++i)
     {
         EXPECT_TRUE(back->limitNewTaskOK(
-            [] { return make_safe<bool>(true); },
+            [] { return make_over<bool>(true); },
             [&](SafePtr<void>)
             {
                 if (back->limitNewTaskOK(
-                    [&] { nNestedRan += 1; return make_safe<bool>(true); },
-                    [](SafePtr<void>) {}
+                    [] { return make_over<bool>(true); },
+                    [&](SafePtr<void>) { nNestedRan += 1; }
                 ))
                     nAccepted += 1;
             }
@@ -579,6 +604,205 @@ TEST_F(THREAD_BACK_TEST, limitNewTaskOK_fromBackFN_seesFreedSlot)
     EXPECT_EQ(2u, back->nFut()) << "REQ: the two accepted tasks are still in flight";
     drainDoneFut(*back);
     EXPECT_EQ(2, nNestedRan.load()) << "REQ: accepted tasks ran";
+}
+// The old entry `[&local]{ local = 1; }` compiled and the worker wrote caller's local.
+// A capture is not a function pointer, so newTaskOK rejects it. Worker data is a SafePtrOver.
+TEST_F(THREAD_BACK_TEST, entryFn_noCapture_safeOwn)
+{
+    int local = 0;
+    auto captured = [&local]() -> SafePtrOver<void> { local = 1; return {}; };
+    static_assert(!is_entry_fn<decltype(captured)>::value);
+    static_assert(!is_entry_fn<int>::value);
+    static_assert(is_entry_arg<size_t>::value);
+    static_assert(is_entry_arg<SafePtrOver<int>>::value);
+    static_assert(!is_entry_arg<SafePtr<int>>::value);
+    static_assert(!is_entry_arg<std::unique_ptr<int>>::value);
+    static_assert(!is_entry_arg<int*>::value);
+    static_assert(!std::is_copy_constructible_v<SafePtrOver<int>>);
+    static_assert(std::is_constructible_v<SafeWeak<int>, SafePtrOver<int>&>);
+    static_assert(!std::is_constructible_v<SafePtrOver<int>, SafePtr<int>>);
+    static_assert(!std::is_constructible_v<MT_SafeThEntryFN, decltype(captured)>);
+    static_assert(!std::is_constructible_v<MT_SafeThEntryFN, std::function<SafePtrOver<void>()>>);
+    auto plain = []() -> SafePtrOver<void> { return {}; };
+    static_assert(std::is_constructible_v<MT_SafeThEntryFN, decltype(plain)>);
+    auto capturedIn = [&local](int&) -> SafePtrOver<void> { local = 1; return {}; };
+    static_assert(!std::is_convertible_v<decltype(capturedIn), SafePtrOver<void>(*)(int&)>);
+
+    auto in = make_over<int>(7);
+    std::atomic<int> got{-1};
+    ASSERT_TRUE(threadBack_.newTaskOK(
+        [](SafePtrOver<int> p) -> SafePtrOver<void> { return make_over<int>(*p.get()); },
+        [&got](SafePtr<void> aRet) { got = *aRet.safe_cast<int>(); },
+        std::move(in)
+    )) << "REQ: SafePtrOver arg is moved to the worker";
+    EXPECT_FALSE(in) << "REQ: caller no longer owns it";
+    while (threadBack_.hdlDoneFut() == 0)
+        timedwait();
+    EXPECT_EQ(7, got.load()) << "REQ: worker saw the value";
+
+    auto kept = make_over<int>(3);
+    EXPECT_FALSE(threadBack_.newTaskOK(
+        [](SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+        UsrBackFN(),
+        std::move(kept)
+    )) << "REQ: null backFN refused";
+    EXPECT_TRUE(kept) << "REQ: refusal does not take the caller's object";
+
+    auto back = mkBack_maxInFlight2<THREAD_BACK_TYPE>();
+    EXPECT_TRUE(back->limitNewTaskOK([] { return make_over<bool>(true); }, [](SafePtr<void>) {}));
+    EXPECT_TRUE(back->limitNewTaskOK([] { return make_over<bool>(true); }, [](SafePtr<void>) {}));
+    auto full = make_over<int>(4);
+    EXPECT_FALSE(back->limitNewTaskOK(
+        [](SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+        [](SafePtr<void>) {},
+        std::move(full)
+    )) << "REQ: full queue refused";
+    EXPECT_TRUE(full) << "REQ: full queue does not take the caller's object";
+    drainDoneFut(*back);
+    EXPECT_EQ(0u, threadBack_.nFut());
+}
+// null fn must stay an empty entry. Wrapping it would make operator bool true and the worker would call it.
+TEST_F(THREAD_BACK_TEST, own_nullFn_rejected_keepsCallerPtr)
+{
+    SafePtrOver<void> (*nullFn)(SafePtrOver<int>) = nullptr;
+    auto in = make_over<int>(1);
+    EXPECT_FALSE(threadBack_.newTaskOK(
+        nullFn, [](SafePtr<void>) {}, std::move(in)
+    )) << "REQ: null entry fn refused";
+    EXPECT_TRUE(in) << "REQ: refusal does not take the caller's object";
+
+    auto inLimit = make_over<int>(2);
+    EXPECT_FALSE(threadBack_.limitNewTaskOK(
+        nullFn, [](SafePtr<void>) {}, std::move(inLimit)
+    )) << "REQ: limitNewTaskOK refuses null entry fn too";
+    EXPECT_TRUE(inLimit);
+    EXPECT_EQ(0u, threadBack_.nFut());
+}
+// same SafePtrOver twice: the first move succeeds, the second throws, and the taken object is destroyed.
+TEST_F(THREAD_BACK_TEST, own_sameSafePtrOver_twice_dropsTaken)
+{
+    auto in = make_over<int>(1);
+    EXPECT_FALSE(threadBack_.newTaskOK(
+        [](SafePtrOver<int>, SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+        [](SafePtr<void>) {},
+        std::move(in), std::move(in)
+    )) << "REQ: repeated SafePtrOver does not build a task";
+    EXPECT_FALSE(in) << "REQ: the taken SafePtrOver was destroyed with the failed build";
+    EXPECT_EQ(0u, threadBack_.nFut());
+}
+TEST_F(THREAD_BACK_TEST, entryRet_reachesBackFn_asSoleSafePtr)
+{
+    int useCount = -1;
+    int value = -1;
+    ASSERT_TRUE(threadBack_.newTaskOK(
+        [] { return make_over<int>(3); },
+        [&](SafePtr<void> aRet)
+        {
+            value = *aRet.safe_cast<int>();
+            useCount = SafePtr<void>(std::move(aRet)).use_count();
+        }
+    ));
+    while (threadBack_.hdlDoneFut() == 0)
+        timedwait();
+    EXPECT_EQ(1, useCount) << "REQ: backFN holds the only SafePtr of the returned object";
+    EXPECT_EQ(3, value);
+}
+TEST_F(THREAD_BACK_TEST, own_afterGet_keepsCaller)
+{
+    auto in = make_over<int>(4);
+    auto kept = in.get();
+    EXPECT_FALSE(threadBack_.newTaskOK(
+        [](SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+        [](SafePtr<void>) {},
+        std::move(in)
+    )) << "REQ: a shared_ptr from get() blocks the entry";
+    EXPECT_TRUE(in) << "REQ: refusal leaves the SafePtrOver";
+    EXPECT_EQ(4, *in.get());
+    EXPECT_EQ(0u, threadBack_.nFut());
+    kept = nullptr;
+}
+TEST_F(THREAD_BACK_TEST, own_kept_when_laterSafePtrOver_isNull)
+{
+    auto first = make_over<int>(5);
+    SafePtrOver<int> second;
+    EXPECT_FALSE(threadBack_.newTaskOK(
+        [](SafePtrOver<int>, SafePtrOver<int>) -> SafePtrOver<void> { return {}; },
+        [](SafePtr<void>) {},
+        std::move(first), std::move(second)
+    )) << "REQ: null SafePtrOver refuses the whole call before any move";
+    ASSERT_TRUE(first) << "REQ: the earlier SafePtrOver was not moved";
+    EXPECT_EQ(5, *first.get());
+    EXPECT_EQ(0u, threadBack_.nFut());
+}
+// newTaskArgOK_ repeats the public checks so a derived newTaskOK_ stays safe on its own.
+TEST_F(THREAD_BACK_TEST, bugFix_newTaskArg_rejects)
+{
+    struct Probe : ThreadBack
+    {
+        bool newTaskOK_(MT_SafeThEntryFN aEntry, UsrBackFN aBack, UniLog& aLog) noexcept override
+        {
+            return newTaskArgOK_(aEntry, aBack, aLog);
+        }
+        size_t hdlDoneFut(UniLog&) noexcept override { return 0; }
+        size_t nFut() const noexcept override { return 0; }
+    };
+    Probe probe;
+    auto entry = []() -> SafePtrOver<void> { return {}; };
+
+    const auto wrongThread = std::async(std::launch::async, [&probe, entry]
+    {
+        return probe.newTaskOK_(MT_SafeThEntryFN(entry), [](SafePtr<void>) {}, UniLog::defaultUniLog_);
+    }).get();
+    EXPECT_FALSE(wrongThread) << "REQ: other thread rejected";
+
+    EXPECT_FALSE(probe.newTaskOK_(MT_SafeThEntryFN(entry), nullptr, UniLog::defaultUniLog_))
+        << "REQ: null backFN rejected";
+    MT_SafeThEntryFN empty(entry);
+    empty = nullptr;
+    EXPECT_FALSE(probe.newTaskOK_(std::move(empty), [](SafePtr<void>) {}, UniLog::defaultUniLog_))
+        << "REQ: empty entry rejected";
+}
+
+TEST_F(THREAD_BACK_TEST, bugFix_entryCall_emptyRet_thenSecondCall)
+{
+    MT_SafeThEntryFN entry([]() -> SafePtrOver<void> { return {}; });
+    EXPECT_FALSE(entry()) << "REQ: an empty result stays empty";
+    EXPECT_FALSE(entry()) << "REQ: a second call has nothing left to run";
+}
+
+// A copied shared_ptr keeps use_count > 1, so the worker cannot detachWeak the return.
+inline std::shared_ptr<int>& pinRetSlot_()
+{
+    static std::shared_ptr<int> slot;
+    return slot;
+}
+inline SafePtrOver<void> pinRet_()
+{
+    auto owned = make_over<int>(1);
+    pinRetSlot_() = owned.get();
+    return owned;
+}
+TEST_F(THREAD_BACK_TEST, bugFix_entryRet_detachWeak_fails)
+{
+    pinRetSlot_() = nullptr;
+    MT_SafeThEntryFN entry(pinRet_);
+    EXPECT_FALSE(entry()) << "REQ: detachWeak fails while another shared_ptr holds the return";
+    ASSERT_TRUE(pinRetSlot_());
+    EXPECT_EQ(1, *pinRetSlot_());
+    pinRetSlot_() = nullptr;
+}
+
+TEST_F(THREAD_BACK_TEST, entry_move_clears_source)
+{
+    auto in = make_over<int>(9);
+    MT_SafeThEntryFN entry([](SafePtrOver<int> p) -> SafePtrOver<void> { return make_over<int>(*p.get()); }, std::move(in));
+    EXPECT_FALSE(in);
+    MT_SafeThEntryFN moved(std::move(entry));
+    EXPECT_FALSE(entry) << "REQ: moved-from entry is empty";
+    ASSERT_TRUE(moved);
+    auto ret = moved();
+    EXPECT_EQ(9, *ret.safe_cast<int>()) << "REQ: trampoline calls with the moved In";
+    EXPECT_FALSE(moved) << "REQ: operator() runs once and drops the args";
 }
 
 }  // namespace

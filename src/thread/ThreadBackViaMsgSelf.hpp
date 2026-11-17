@@ -22,12 +22,12 @@ namespace rlib
 {
 // ***********************************************************************************************
 // - deferred by MsgSelf: aBackFN runs in main thread via MsgSelf queue, not directly
-inline void cb_backFN(TaskBackFN aBackFN, const SPtr<MsgSelf>& aMsgSelf,
+// - aRet is already a SafePtr: hdlDoneFut crossed the thread
+inline void cb_backFN(UsrBackFN aBackFN, const SPtr<MsgSelf>& aMsgSelf,
     EMsgPriority aPri, SafePtr<void> aRet) noexcept
 {
     if (!aMsgSelf->newMsgOK(
-        [aBackFN = std::move(aBackFN),
-        ret = std::move(aRet)]() mutable noexcept
+        [aBackFN = std::move(aBackFN), ret = std::move(aRet)]() mutable noexcept
         {
             try { aBackFN(std::move(ret)); }
             catch (...) { ERR("(viaMsgSelf) backFN() except=" << mt_exceptInfo()); }
@@ -37,13 +37,13 @@ inline void cb_backFN(TaskBackFN aBackFN, const SPtr<MsgSelf>& aMsgSelf,
     }
 }
 
-// wrap TaskBackFN to MsgSelf
+// wrap UsrBackFN to MsgSelf
 [[nodiscard]] inline
-TaskBackFN viaMsgSelf(TaskBackFN aBackFN, EMsgPriority aPri = EMsgPri_NORM) noexcept
+UsrBackFN viaMsgSelf(UsrBackFN aBackFN, EMsgPriority aPri = EMsgPri_NORM) noexcept
 {
     auto ms = getMsgSelf();
     return ! aBackFN || ! ms
-        ? TaskBackFN()  // empty fn
+        ? UsrBackFN()  // empty fn
         : [aBackFN = std::move(aBackFN), ms, aPri](SafePtr<void> aRet) mutable noexcept
         {
             cb_backFN(std::move(aBackFN), ms, aPri, std::move(aRet));  // not exe here
@@ -57,4 +57,5 @@ TaskBackFN viaMsgSelf(TaskBackFN aBackFN, EMsgPriority aPri = EMsgPri_NORM) noex
 // 2023-09-15  CSZ       1)create
 // 2024-10-05  CSZ       - simpler by MSG_SELF instead of para
 // 2026-10-19  CSZ       - catch backFN() here; MsgCB itself does not throw
+// 2026-11-13  CSZ       - SafePtr to SafePtrOver
 // ***********************************************************************************************

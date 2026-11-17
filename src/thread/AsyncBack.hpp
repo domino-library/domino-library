@@ -12,14 +12,13 @@
 //                    [main thread]
 //                         |
 //                         | std::async()    [new thread]
-//  AsyncBack::newTaskOK() |--------------------->| MT_TaskEntryFN()  // time-consuming task eg block to rec msg
+//  AsyncBack::newTaskOK() |--------------------->| MT_SafeThEntryFN()  // time-consuming task eg block to rec msg
 //                         |                      |
-//            TaskBackFN() |<.....................| (over)
-//                         |
-//                         |
+//             UsrBackFN() |<.....................| (over)
+//                         |                      |
 //
-// - core: TaskBackFN
-//   . after MT_TaskEntryFN() end in "other thread", TaskBackFN() is auto-run in MAIN THREAD - key diff async()
+// - core: UsrBackFN
+//   . after MT_SafeThEntryFN() end in "other thread", UsrBackFN() is auto-run in MAIN THREAD - key diff async()
 //
 // - VALUE/why:
 //   * keep all logic (most code) in main thread (single thread: simple logic, no lock/deadlock, etc)
@@ -29,10 +28,10 @@
 //     . std::future (to msg from other thread back to main thread)
 //
 // - REQ:
-//   * run MT_TaskEntryFN() in new thread by async() (common in ThreadBack, async here)
-//   * when MT_TaskEntryFN() finished, auto rouse main thread to run TaskBackFN()
-//   . MT_TaskEntryFN() ret T(succ)/F(fail)
-//     . this ret is as input para of TaskBackFN(); if eg async() fail, this para=F also
+//   * run MT_SafeThEntryFN() in new thread by async() (common in ThreadBack, async here)
+//   * when MT_SafeThEntryFN() finished, auto rouse main thread to run UsrBackFN()
+//   . MT_SafeThEntryFN() ret T(succ)/F(fail)
+//     . this ret is as input para of UsrBackFN(); if eg async() fail, this para=F also
 //   * AsyncBack is for normal/most scenario, may NOK for huge threads, high throughput, etc
 //   * ONLY call AsyncBack in main-thread
 //
@@ -40,7 +39,7 @@
 //   . not support TOO many threads (used-up thread resource; impossible in most/normal cases)
 //     . not limit usr to create more async than MAX_ASYNC, but usr cover the safety (like std lib)
 //   . lower performance than eg thread pool (but simpler impl than thread pool)
-//   . no duty to any unsafe behavior of MT_TaskEntryFN & TaskBackFN
+//   . no duty to any unsafe behavior of MT_SafeThEntryFN & UsrBackFN
 // - MT safe:
 //   . MT_/mt_ prefix: yes
 //   . others: NO (only in main thread - most dom lib code shall be in main thread - simple)
@@ -58,8 +57,8 @@ namespace rlib
 {
 // ***********************************************************************************************
 struct MT_AsyncTaskInfo {
-    TaskBackFN backFN_;  // before mt_future_: ~mt_future_ joins, then ~backFN_
-    std::future<SafePtr<void>> mt_future_;
+    UsrBackFN backFN_;  // before mt_future_: ~mt_future_ joins, then ~backFN_
+    std::future<SafePtrOver<void>> mt_future_;
 };
 
 // ***********************************************************************************************
@@ -70,12 +69,13 @@ public:
     explicit AsyncBack(size_t aMaxAsync = MAX_ASYNC) noexcept(false);
     ~AsyncBack() noexcept;
 
-    [[nodiscard]] bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
+    using ThreadBack::newTaskOK;  // fn, back, args...
     [[nodiscard]] size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept override;
     [[nodiscard]] size_t nFut() const noexcept override { return fut_backFN_S_.size(); }
 
 private:
-    static SafePtr<void> mt_thMain_(MT_TaskEntryFN, std::atomic<size_t>&) noexcept;  // runs in new thread
+    [[nodiscard]] bool newTaskOK_(MT_SafeThEntryFN, UsrBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
+    static SafePtrOver<void> mt_thMain_(MT_SafeThEntryFN, std::atomic<size_t>&) noexcept;  // runs in new thread
     static constexpr size_t  MAX_ASYNC = 100;  // rational default; stack costs 100*8M=800M
 
     // mt_nDoneFut_ BEFORE fut_backFN_S_: ~future joins the worker, which may still touch the count

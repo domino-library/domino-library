@@ -20,18 +20,19 @@
 //   . Only allow safe operations eg between same type, to base/void/const
 //   . Unsafe operations (eg to derive, const→non-const): return nullptr, or compile-time error (better)
 // - Access, eg:
-//   . safe get() returns shared_ptr<T> (not raw T*, safer lifecycle management)
+//   . get() returns shared_ptr<T> (not raw T*)
 //   . Correct destructor call via shared_ptr (even through void*/base*)
+//   . SafeWeak: weak reference support (lock()/expired())
 // - Additional Features:
 //   * max (safe + convenient) / (mem + perf + impl)
-//   . SafeWeak: weak reference support (lock()/expired())
-//   . handover(): sole new_safe -> new identity (old weak expire); else nullptr, *this kept
 //   . Container support: usable as map/unordered_map key
 //   . Exception safe: make_safe/new_safe catch a throwing T constructor and return nullptr
+// Worth?
+// * yes for each bit of usr safety
+// - yes for min cost of performance, mem, etc
 //
 // CONSTRAINTS:
 //   - NOT mt-safe: Single-thread-use as shared_ptr
-//   . cross-thread: new_safe + MtInQueue (handover cuts old weak refs)
 //   * Circular reference: user's duty (like shared_ptr)
 //     . eg force-cast SafePtr<T> to SafePtr<U>: user's duty
 // ***********************************************************************************************
@@ -45,9 +46,7 @@
 namespace rlib
 {
 // ***********************************************************************************************
-// - in the ctrl blk, so get_deleter finds it on any view (void/base/self)
-// - obj_ is the created U*: ~U runs even through a base/void that has no virtual dtor
-// - del_ null: handover() has taken the object; this deleter deletes nothing
+// In the control block. SafePtrOver disarms del_ so detachWeak() can retarget the object.
 struct SafeDeleter
 {
     void (*del_)(void*);
@@ -56,26 +55,23 @@ struct SafeDeleter
     void operator()(const void*) const noexcept { if (del_) del_(obj_); }
 };
 
-// public enable_shared_from_this (self or base): its weak_from_this() is visible
-// - private base / ambiguous bases: lookup fails -> false (shared_ptr won't set weak_this either)
-template<class T, class = void> struct has_from_this : std::false_type {};
-template<class T> struct has_from_this<T, std::void_t<decltype(std::declval<const T&>().weak_from_this())>>
-    : std::true_type {};
-template<class T> constexpr bool has_from_this_v = has_from_this<T>::value;
-
 // ***********************************************************************************************
+template<typename U> class SafePtrOver;
+
 template<typename T> class SafeWeak;
 
 // EBO: type_index only exists for SafePtr<void>, zero overhead for SafePtr<T≠void>
 template<bool> struct void_type_index {};
 template<>     struct void_type_index<true> { std::type_index lastType_ = typeid(void); };  // type before cast to void
 
+// ***********************************************************************************************
 template<typename T = void>
 class SafePtr : private void_type_index<std::is_void_v<T>>
 {
 public:
     using element_type = T;  // smart-pointer metadata, like std::shared_ptr
 
+    // create:
     // - safe-only creation, eg can't construct by raw ptr/shared_ptr that maybe unsafe
     // - can't create by SafePtr(ConstructArgs...) that confuse cp constructor, make_safe() instead
     // - T(ConstructArgs) SHALL mem-safe
@@ -84,56 +80,56 @@ public:
     template<typename U, typename... ConstructArgs> friend
         SafePtr<U> make_safe(ConstructArgs&&...) noexcept;  // for most T
     template<typename U, typename... ConstructArgs> friend
-        SafePtr<U> new_safe(ConstructArgs&&...) noexcept;  // for big T, avoid SafeWeak block free T's mem
-    // clarity: forbid unsafe create from raw ptr / shared_ptr
+        SafePtr<U> new_safe(ConstructArgs&&...) noexcept;   // for big T, avoid SafeWeak block free T's mem
+    // forbid unsafe create from raw ptr / shared_ptr
     template<typename U>
         SafePtr(U*) = delete;
     template<typename U>
         SafePtr(const std::shared_ptr<U>&) = delete;
 
-    template<typename From> friend class SafePtr;  // let cp/mv access private
-    friend class SafeWeak<T>;  // so SafeWeak ctor reads pT_ & SafeWeak.lock() builds SafePtr
-    // cmp
-    template<typename T1, typename U1> friend bool operator==(const SafePtr<T1>&, const SafePtr<U1>&) noexcept;
-    template<typename T1, typename U1> friend bool operator< (const SafePtr<T1>&, const SafePtr<U1>&) noexcept;
-    friend struct std::hash<SafePtr>;
+    // same-type cp/cp=: self mv suppress compiler-gen so explicit
+    SafePtr(const SafePtr&) = default;
+    SafePtr& operator=(const SafePtr&) = default;
+    // same-type mv/mv=: forbid compiler-gen - not safe
+    SafePtr(SafePtr&& aSrc) noexcept;
+    SafePtr& operator=(SafePtr&& aSrc) noexcept;
     // safe-only cp/mv diff-type (vs shared_ptr, eg static_pointer_cast<any> is not safe)
     // - SFINAE: 1)testable 2)more clear compile-err 3)overload resolution: trim & predictable
     // - by-value: lvalue→cp param then mv pT_; rvalue→mv param then mv pT_ (extra mv negligible)
     template<typename From, std::enable_if_t<std::is_convertible_v<From*, T*>, int> = 0>
         SafePtr(SafePtr<From>) noexcept;  // cp & mv, ok (or compile err)
 
-    // same-type mv/mv=: forbid compiler-gen - not safe
-    SafePtr(SafePtr&& aSrc) noexcept;
-    SafePtr& operator=(SafePtr&& aSrc) noexcept;
-    // same-type cp/cp=: self mv suppress compiler-gen so explicit
-    SafePtr(const SafePtr&) = default;
-    SafePtr& operator=(const SafePtr&) = default;
-
-    // safe cast
+    // cast
     template<typename To> [[nodiscard]]
-        std::shared_ptr<To> cast() const noexcept;  // ret ok/null; safe cast
+        std::shared_ptr<To> safe_cast() const noexcept;  // ok or null
     template<typename To, typename From> friend
-        SafePtr<To> safe_cast(const SafePtr<From>&) noexcept;  // ret ok/null
+        SafePtr<To> safe_cast(const SafePtr<From>&) noexcept;  // ret SafePtr, ok/null
 
-    // safe usage: convenient(compatible shared_ptr), equivalent & min
-    // . ret shared_ptr is safer than T* (but not safest since to call T's func easily)
-    // . no operator*() since T& is unsafe
-    [[nodiscard]]
-        std::shared_ptr<T> get() const noexcept { return pT_; }
+    // cmp
+    template<typename T1, typename U1> friend bool operator==(const SafePtr<T1>&, const SafePtr<U1>&) noexcept;
+    template<typename T1, typename U1> friend bool operator< (const SafePtr<T1>&, const SafePtr<U1>&) noexcept;
+    template<typename U> [[nodiscard]]
+        bool owner_before(const SafePtr<U>& aOther) const noexcept { return pT_.owner_before(aOther.pT_); }  // for container key
+
+    // compatible shared_ptr:
+    // - get/->: safer than ret T*/SafePtrView after rm SafePtr
+    [[nodiscard]] std::shared_ptr<T> get() const noexcept { return pT_; }
     std::shared_ptr<T> operator->() const noexcept;  // convenient; unsafe to ret ref
     explicit operator bool() const noexcept { return pT_ != nullptr; }
     [[nodiscard]] auto use_count() const noexcept { return pT_.use_count(); }
-    [[nodiscard]] SafePtr handover() noexcept;  // drop weak_ptr, transfer ownership, new_safe only
-    void swap(SafePtr& aOther) noexcept;
-    template<typename U> [[nodiscard]]
-        bool owner_before(const SafePtr<U>& aOther) const noexcept { return pT_.owner_before(aOther.pT_); }
 
     // needed by safe_cast (preserves orig type across void↔T round-trip); also for debug
     [[nodiscard]] auto lastType() const noexcept;
 
+    // friend:
+    template<typename From> friend class SafePtr;   // let cp/mv access private
+    friend class SafeWeak<T>;  // so SafeWeak ctor reads pT_ & SafeWeak.lock() builds SafePtr
+    template<typename U> friend class SafePtrOver;  // make_over / detachWeak seat and retarget pT_
+    friend struct std::hash<SafePtr>;
+
 private:
     constexpr SafePtr(std::shared_ptr<T>&&, const std::type_index&) noexcept;
+    [[nodiscard]] const std::shared_ptr<T>& get_() const noexcept { return pT_; }  // for inner cmp
 
     // -------------------------------------------------------------------------------------------
     std::shared_ptr<T> pT_;  // core
@@ -141,10 +137,6 @@ private:
 };
 
 // ***********************************************************************************************
-// - safe cp/mv diff-type, otherwise compile-err (safer than nullptr, like cp/mv shared_ptr)
-//   . by-value param: lvalue→cp then mv pT_; rvalue→mv then mv pT_ (extra mv negligible)
-//   . same-type cp/mv use non-template overloads (higher priority), no conflict
-// - void->T: compile-err, can safe_cast() if need
 template<typename T>
 template<typename From, std::enable_if_t<std::is_convertible_v<From*, T*>, int>>
 SafePtr<T>::SafePtr(SafePtr<From> aSafeFrom) noexcept  // cp & mv
@@ -189,8 +181,66 @@ constexpr SafePtr<T>::SafePtr(std::shared_ptr<T>&& aPtr, [[maybe_unused]] const 
 
 // ***********************************************************************************************
 template<typename T>
+auto SafePtr<T>::lastType() const noexcept
+{
+    if constexpr(std::is_void_v<T>) return this->lastType_;
+    else return std::type_index(typeid(T));
+}
+
+// ***********************************************************************************************
+template<typename T>
+std::shared_ptr<T> SafePtr<T>::operator->() const noexcept
+{
+    if (!pT_)
+    {
+        EMG("(SafePtr) operator-> on null");
+        std::abort();  // safer: no dirty mem; easier debug: here rather than later; simpler than terminate()
+    }
+    return pT_;
+}
+
+
+// ***********************************************************************************************
+template<typename U, typename... ConstructArgs>
+[[nodiscard]] SafePtr<U> make_safe(ConstructArgs&&... aArgs) noexcept
+{
+    SafePtr<U> safeU;
+    try {  // bad_alloc, or except from U's constructor
+        safeU.pT_ = std::make_shared<U>(std::forward<ConstructArgs>(aArgs)...);  // std::make_shared, not boost's
+        // HID("new ptr=" << (void*)(safeU.pT_.get()));  // too many print; void* print addr rather than content(dangerous)
+    } catch(...) {  // bad_alloc, or T's constructor; EMG, then return nullptr
+        EMG("make_safe except=%s", mt_exceptInfo());
+    }
+    return safeU;
+}
+
+template<typename U, typename... ConstructArgs>
+[[nodiscard]] SafePtr<U> new_safe(ConstructArgs&&... aArgs) noexcept
+{
+    SafePtr<U> safeU;
+    try {  // bad_alloc, or except from U's constructor
+        // not make_shared: U sits outside the ctrl blk, so a SafeWeak does not pin a big T
+        // shared_ptr(Y*): if the ctrl blk throws, Y is deleted (std guarantee)
+        safeU.pT_ = std::shared_ptr<U>(new U(std::forward<ConstructArgs>(aArgs)...));
+    } catch(...) {  // bad_alloc, or T's constructor; EMG, then return nullptr
+        EMG("new_safe except=%s", mt_exceptInfo());
+    }
+    return safeU;
+}
+
+// ***********************************************************************************************
+// - safe cast all possible (self/base/derive/void/back, more than cp constructor)
+// - explicit cast so ok or nullptr (cp/mv constructor is implicit & ok/compile-err)
+// - unified-ret is predictable & simple
+// - std not allow overload dynamic_pointer_cast so safe_cast & dyn_ptr_cast
+template<typename To, typename From>
+[[nodiscard]] SafePtr<To> safe_cast(const SafePtr<From>& aSafeFrom) noexcept
+{
+    return SafePtr<To>(aSafeFrom.template safe_cast<To>(), aSafeFrom.lastType());
+}
+template<typename T>
 template<typename To>
-std::shared_ptr<To> SafePtr<T>::cast() const noexcept
+std::shared_ptr<To> SafePtr<T>::safe_cast() const noexcept
 {
     if constexpr(std::is_convertible_v<T*, To*>)
     {
@@ -227,102 +277,6 @@ std::shared_ptr<To> SafePtr<T>::cast() const noexcept
 }
 
 // ***********************************************************************************************
-// - sole owner from new_safe -> new ctrl blk, same object: old SafeWeak/weak_ptr expire
-// - else nullptr and *this unchanged (null, other owner, or make_safe)
-// - fresh starts with del_ null: if the new ctrl blk throws, its deleter must not delete the object
-template<typename T>
-SafePtr<T> SafePtr<T>::handover() noexcept
-{
-    if (pT_.use_count() != 1)
-        return nullptr;
-    auto* oldDel = std::get_deleter<SafeDeleter>(pT_);
-    if (!oldDel)
-        return nullptr;
-
-    SafePtr<T> fresh;
-    try {
-        fresh.pT_ = std::shared_ptr<T>(pT_.get(), SafeDeleter{nullptr, oldDel->obj_});
-    } catch(...) {  // GCOVR_EXCL_LINE bad_alloc only
-        EMG("handover except=%s", mt_exceptInfo());
-        return nullptr;  // GCOVR_EXCL_LINE *this unchanged
-    }
-    std::get_deleter<SafeDeleter>(fresh.pT_)->del_ = oldDel->del_;  // fresh owns
-    oldDel->del_ = nullptr;                                         // old owns nothing
-    if constexpr(std::is_void_v<T>)
-        fresh.lastType_ = this->lastType_;
-    *this = nullptr;  // old ctrl blk dies; weak refs on it expire
-    return fresh;
-}
-
-// ***********************************************************************************************
-template<typename T>
-auto SafePtr<T>::lastType() const noexcept
-{
-    if constexpr(std::is_void_v<T>) return this->lastType_;
-    else return std::type_index(typeid(T));
-}
-
-// ***********************************************************************************************
-template<typename T>
-std::shared_ptr<T> SafePtr<T>::operator->() const noexcept
-{
-    if (!pT_)
-    {
-        EMG("(SafePtr) operator-> on null");
-        std::abort();  // safer: no dirty mem; easier debug: here rather than later; simpler than terminate()
-    }
-    return pT_;
-}
-
-// ***********************************************************************************************
-template<typename T>
-void SafePtr<T>::swap(SafePtr& aOther) noexcept
-{
-    pT_.swap(aOther.pT_);
-    if constexpr(std::is_void_v<T>)
-        std::swap(this->lastType_, aOther.lastType_);
-}
-
-
-
-// ***********************************************************************************************
-template<typename U, typename... ConstructArgs>
-[[nodiscard]] SafePtr<U> make_safe(ConstructArgs&&... aArgs) noexcept
-{
-    SafePtr<U> safeU;
-    try {  // bad_alloc, or except from U's constructor
-        safeU.pT_ = std::make_shared<U>(std::forward<ConstructArgs>(aArgs)...);  // std::make_shared, not boost's
-        // HID("new ptr=" << (void*)(safeU.pT_.get()));  // too many print; void* print addr rather than content(dangerous)
-    } catch(...) {  // bad_alloc, or T's constructor; EMG, then return nullptr
-        EMG("make_safe except=%s", mt_exceptInfo());
-    }
-    return safeU;
-}
-
-template<typename U, typename... ConstructArgs>
-[[nodiscard]] SafePtr<U> new_safe(ConstructArgs&&... aArgs) noexcept
-{
-    // handover() builds a 2nd ctrl blk; weak_this stays on the 1st, so shared_from_this() breaks
-    static_assert(!has_from_this_v<U>,
-        "(SafePtr) new_safe rejects enable_shared_from_this. make_safe is fine (one ctrl blk).");
-    SafePtr<U> safeU;
-    try {  // bad_alloc, or except from U's constructor
-        // not make_shared: U must sit outside the ctrl blk, or handover() can't retarget it
-        // shared_ptr(Y*, D): if ctrl-blk alloc throws, D(Y*) runs (del_ is set, so U is deleted)
-        U* p = new U(std::forward<ConstructArgs>(aArgs)...);
-        // default_delete, not a raw delete: same ~U, and the delete-expr stays in the std header
-        // (a raw delete here warns for a polymorphic U that has no virtual dtor)
-        // const U*: stored as void*, so strip const here; static_cast<U*>(void*) restores it
-        safeU.pT_ = std::shared_ptr<U>(p, SafeDeleter{
-            [](void* o) { std::default_delete<U>()(static_cast<U*>(o)); },
-            const_cast<std::remove_const_t<U>*>(p)});
-    } catch(...) {  // bad_alloc, or T's constructor; EMG, then return nullptr
-        EMG("new_safe except=%s", mt_exceptInfo());
-    }
-    return safeU;
-}
-
-// ***********************************************************************************************
 // - SafePtr can be key of map & unordered_map (like shared_ptr)
 // - ptr-only: == means "same object" (identity), not "same cast path" (view)
 //   . same ptr → same shared object (shared_ptr guarantee); lastType_ is a view attribute
@@ -330,7 +284,7 @@ template<typename U, typename... ConstructArgs>
 template<typename T, typename U>
 bool operator==(const SafePtr<T>& lhs, const SafePtr<U>& rhs) noexcept
 {
-    return lhs.pT_.get() == rhs.pT_.get();  // faster than lhs.get()..; same safe
+    return lhs.get_() == rhs.get_();  // shared_ptr compares stored pointers; no refcount copy
 }
 template<typename T, typename U>
 bool operator!=(const SafePtr<T>& lhs, const SafePtr<U>& rhs) noexcept
@@ -340,23 +294,7 @@ bool operator!=(const SafePtr<T>& lhs, const SafePtr<U>& rhs) noexcept
 template<typename T, typename U>
 bool operator<(const SafePtr<T>& lhs, const SafePtr<U>& rhs) noexcept
 {
-    return std::less<>()(lhs.pT_.get(), rhs.pT_.get());
-}
-template<typename T>
-void swap(SafePtr<T>& lhs, SafePtr<T>& rhs) noexcept
-{
-    lhs.swap(rhs);
-}
-
-// ***********************************************************************************************
-// - safe cast all possible (self/base/derive/void/back, more than cp constructor)
-// - explicit cast so ok or nullptr (cp/mv constructor is implicit & ok/compile-err)
-// - unified-ret is predictable & simple
-// - std not allow overload dynamic_pointer_cast so safe_cast & dyn_ptr_cast
-template<typename To, typename From>
-[[nodiscard]] SafePtr<To> safe_cast(const SafePtr<From>& aSafeFrom) noexcept
-{
-    return SafePtr<To>(aSafeFrom.template cast<To>(), aSafeFrom.lastType());
+    return lhs.get_() < rhs.get_();
 }
 
 
@@ -454,6 +392,7 @@ struct std::owner_less<rlib::SafeWeak<T>>
 // 2026-06-08  CSZ       - perf: ==/!=/< & hash compare raw-ptr identity (no refcount churn on map keys)
 // 2026-10-14  CSZ       - EMG in rare err
 // 2026-11-04  CSZ       - new_safe + handover() to enhance eg MtInQueue's push safety
+// 2026-11-10  CSZ       - drop handover; focus on safer shared_ptr
 // ***********************************************************************************************
 // - Q&A
 //   * noexcept & constexpr (for whole lib)

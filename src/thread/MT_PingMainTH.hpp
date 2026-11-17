@@ -32,24 +32,21 @@ namespace rlib
 std::thread::id mt_getMainTH() noexcept;
 
 // * check if the current thread is the main thread
-//   . release-active (unlike assert)
-//   . near-zero cost
-//     . shall be in cold path, NEVER in hot path
-//     . min check points to cover major code (than cover nothing)
-//     . on violation: EMG; no throw, never abort
-//   . ret: true if in main-thread; false so caller MUST early-return in release
+//   . no zero-overhead way yet to guard every main-thread entry, so defer until better way
+//   . existing call sites stay; on violation: EMG, no throw, never abort
+//   . ret: true if in main-thread; false so caller MUST early-return
 // - usage: if (!mt_reqMainTH(__func__)) return;
 [[nodiscard]] bool mt_reqMainTH(const char* aFn) noexcept;
 
 // ***********************************************************************************************
 // - can't use ObjAnywhere that is not MT safe
-// - REQ: usr shall not use g_notifMainTH, otherwise impl change may impact his/her code
-extern MT_Notifier g_notifMainTH;
+// - REQ: usr shall not use mt_g_notifMainTH, otherwise impl change may impact his/her code
+extern MT_Notifier mt_g_notifMainTH;
 
 // - REQ: can provide diff impl w/o usr code change
 inline void mt_pingMainTH()
 {
-    g_notifMainTH.mt_notify();
+    mt_g_notifMainTH.mt_notify();
 }
 
 // - REQ: can provide diff impl w/o usr code change
@@ -57,7 +54,7 @@ inline void mt_pingMainTH()
 // - REQ: timer guarantee no wait forever
 inline void timedwait(const size_t aSec = 0, const size_t aRestNsec = 100'000'000)
 {
-    g_notifMainTH.timedwait(aSec, aRestNsec);
+    mt_g_notifMainTH.timedwait(aSec, aRestNsec);
 }
 
 }  // namespace

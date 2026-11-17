@@ -38,15 +38,16 @@
 #pragma once
 
 #include <functional>
+#include <type_traits>
+#include <utility>
 
-#include "SafePtr.hpp"
+#include "MT_SafeThEntryFN.hpp"
 #include "UniLog.hpp"
 
 namespace rlib
 {
 // ***********************************************************************************************
-using MT_TaskEntryFN  = std::function<SafePtr<void>()>;  // ret-nullptr means failure
-using TaskBackFN      = std::function<void(SafePtr<void>)>;  // MT_TaskEntryFN's ret as para
+using UsrBackFN = std::function<void(SafePtr<void>)>;  // main thread: the cross is over
 
 // ***********************************************************************************************
 class ThreadBack
@@ -57,19 +58,20 @@ public:
     // - wait workers FOREVER: safe (& no choice)
     ThreadBack() noexcept = default;
     virtual ~ThreadBack() noexcept = default;
+    // forbid:
     ThreadBack(const ThreadBack&) = delete;
     ThreadBack& operator=(const ThreadBack&) = delete;
     ThreadBack(ThreadBack&&) = delete;
     ThreadBack& operator=(ThreadBack&&) = delete;
 
-    // @brief: Schedules an asynchronous task to be executed in a background thread.
-    // @param MT_TaskEntryFN: The task to be executed asynchronously.
-    // @param TaskBackFN    : The callback to be invoked in the main thread upon task completion.
-    // @param UniLog        : The logger to use for this operation.
-    [[nodiscard]] virtual bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept = 0;
+    // - aUsrEntryFN: like std::thread(mt_aFN, mt_aArgPack...)
+    // - UsrBackFN: invoked on the main thread
+    template<class aUsrEntryFN, class... aEntryArgPack>
+    [[nodiscard]] bool newTaskOK(aUsrEntryFN, UsrBackFN, aEntryArgPack&&...) noexcept;
 
     // @brief: like newTaskOK but reject if nFut() >= maxInFlight_ (for users who want to limit max#)
-    [[nodiscard]] bool limitNewTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept;
+    template<class aUsrEntryFN, class... aEntryArgPack>
+    [[nodiscard]] bool limitNewTaskOK(aUsrEntryFN, UsrBackFN, aEntryArgPack&&...) noexcept;
 
     // @brief: Processes completed tasks and invokes their callbacks on the main thread.
     // @param UniLog: The logger to use for this operation.
@@ -78,15 +80,48 @@ public:
 
     [[nodiscard]] virtual size_t nFut() const noexcept = 0;
 
-protected:
+private:
     // -------------------------------------------------------------------------------------------
-    [[nodiscard]] bool newTaskArgOK_(const MT_TaskEntryFN&, const TaskBackFN&, UniLog&) noexcept;
+    // derived classes enqueue here. Users call the template newTaskOK above.
+    [[nodiscard]] virtual bool newTaskOK_(MT_SafeThEntryFN, UsrBackFN, UniLog& = UniLog::defaultUniLog_) noexcept = 0;
+protected:
+    [[nodiscard]] bool newTaskArgOK_(const MT_SafeThEntryFN&, const UsrBackFN&, UniLog&) noexcept;
 
     // limitNewTaskOK cap on outstanding tasks (nFut). Not a thread count:
     // AsyncBack: max async tasks. ThPoolBack: max task-queue depth.
     // newTaskOK itself may exceed it.
     size_t  maxInFlight_ = 0;
 };
+
+// ***********************************************************************************************
+template<class aUsrEntryFN, class... aEntryArgPack>
+bool ThreadBack::limitNewTaskOK(aUsrEntryFN mt_aFN, UsrBackFN aBackFN, aEntryArgPack&&... mt_aArgPack) noexcept
+{
+    if (!mt_reqMainTH(__func__))
+        return false;
+    if (nFut() >= maxInFlight_)
+    {
+        WRN("(ThreadBack) max reached (max=" << maxInFlight_ << "), reject new task");
+        return false;
+    }
+    return newTaskOK(mt_aFN, std::move(aBackFN), std::forward<aEntryArgPack>(mt_aArgPack)...);
+}
+
+template<class aUsrEntryFN, class... aEntryArgPack>
+bool ThreadBack::newTaskOK(aUsrEntryFN mt_aFN, UsrBackFN aBackFN, aEntryArgPack&&... mt_aArgPack) noexcept
+{
+    static_assert(is_entry_fn<aUsrEntryFN>::value, "(ThreadBack) MT task must be capture-less");
+    if (!mt_reqMainTH(__func__))
+        return false;
+    if (!aBackFN)
+    {
+        ERR("(ThreadBack) aBackFN=null doesn't make sense!!! Why not async() directly?");
+        return false;
+    }
+    MT_SafeThEntryFN entry(mt_aFN, std::forward<aEntryArgPack>(mt_aArgPack)...);
+    if (!entry)  return false;
+    return newTaskOK_(std::move(entry), std::move(aBackFN), UniLog::defaultUniLog_);
+}
 
 }  // namespace
 // ***********************************************************************************************
@@ -99,8 +134,9 @@ protected:
 // 2026-10-13  CSZ       - enhance & unify dtor
 // 2026-10-14  CSZ       3)refactor since professional ThPoolBack
 // 2026-10-19  CSZ       - delete copy/move (polymorphic base)
+// 2026-11-05  CSZ       4)enhance entry-fn safety
+// 2026-11-13  CSZ       - backFN takes SafePtr: thread already crossed
 // ***********************************************************************************************
-// - why SafePtr
-//   . thread can ret any type data include bool
-//   . simpler than using MtQ to ship rsp back to main thread
-//   . safe convert from SafePtr<void> to corresponding data
+// - why SafePtrOver
+//   . entry args and the entry return stay SafePtrOver: one owner across the thread
+//   . backFN is already on the main thread: SafePtr<void>(std::move(over))

@@ -32,13 +32,13 @@
 #include <vector>
 
 #include "MT_PingMainTH.hpp"
-#include "SafePtr.hpp"  // always SafePtr, shared_ptr can't cut a weak ref
+#include "SafePtrOver.hpp"
 
 namespace rlib
 {
-// - type key is SafePtr<void>::lastType(), which mt_pushOK sets from aEleType
+// - type key is SafePtrOver<void>::lastType(), which mt_pushOK sets from aEleType
 // - aEleType can't be void: lastType would be the pre-void type, not typeid(void)
-using EleHdlr = std::function<void(SafePtr<void>)>;
+using EleHdlr = std::function<void(SafePtr<void>)>;  // main thread: the cross is over
 
 // ***********************************************************************************************
 class MtInQueue
@@ -46,15 +46,17 @@ class MtInQueue
 public:
     ~MtInQueue() noexcept;  // noexcept like most interfaces, explicit is safer to usr than implicit!!!
 
-    // - only a sole new_safe: handover(), so a weak ref taken before push can't reach the ele
+    // - SafePtrOver only: the sender cannot keep a SafePtr or a SafeWeak of this object
+    // - queue keeps SafePtrOver; main-thread hdlr gets SafePtr<void>(std::move(over))
+    // - pop() stays SafePtrOver: the caller may push that element again
     // - except eg bad_alloc: can't recover->terminate
-    template<class aEleType> [[nodiscard]] bool mt_pushOK(SafePtr<aEleType>&& aEle) noexcept;
+    template<class aEleType> [[nodiscard]] bool mt_pushOK(SafePtrOver<aEleType>&& aEle) noexcept;
 
     // - shall be called in main thread ONLY!!!
     // - high performance
-    [[nodiscard]] SafePtr<void> pop() noexcept;
+    [[nodiscard]] SafePtrOver<void> pop() noexcept;
     // mismatch: leave that element and return nullptr - usr can retry than drop valuable input
-    template<class aEleType> [[nodiscard]] SafePtr<aEleType> pop() noexcept;
+    template<class aEleType> [[nodiscard]] SafePtrOver<aEleType> pop() noexcept;
     [[nodiscard]] size_t size(bool canBlock) const noexcept;
     void clearAll() noexcept;  // clear elements + handlers
 
@@ -62,15 +64,15 @@ public:
     template<class aEleType> [[nodiscard]] bool setHdlrOK(EleHdlr) noexcept;  // except eg bad_alloc: can't recover->terminate
     size_t handleAllEle() noexcept;
     [[nodiscard]] auto nHdlr() const noexcept { return tid_hdlr_S_.size(); }
-    void clearHdlrPool() noexcept { decltype(tid_hdlr_S_)().swap(tid_hdlr_S_); }
+    void clearHdlrPool() noexcept;
 
 private:
-    std::deque<SafePtr<void>>::iterator begin_() noexcept;
+    std::deque<SafePtrOver<void>>::iterator begin_() noexcept;
     size_t  handleCacheEle_() noexcept;
 
     // -------------------------------------------------------------------------------------------
-    std::deque<SafePtr<void>> mt_queue_;  // most suitable container
-    std::deque<SafePtr<void>> cache_;  // main-thread use ONLY (so no mutex protect)
+    std::deque<SafePtrOver<void>> mt_queue_;  // most suitable container
+    std::deque<SafePtrOver<void>> cache_;  // main-thread use ONLY (so no mutex protect)
     mutable std::mutex mt_mutex_;
 
     // REQ: max perf/mem
@@ -88,7 +90,7 @@ public:
 
 // ***********************************************************************************************
 template<class aEleType>
-bool MtInQueue::mt_pushOK(SafePtr<aEleType>&& aEle) noexcept
+bool MtInQueue::mt_pushOK(SafePtrOver<aEleType>&& aEle) noexcept
 {
     static_assert(!std::is_void_v<aEleType>,
         "(MtQ) aEleType can't be void: its lastType is the type before erasure");
@@ -97,21 +99,20 @@ bool MtInQueue::mt_pushOK(SafePtr<aEleType>&& aEle) noexcept
         HID("!!! can't push nullptr since pop empty will ret nullptr");
         return false;
     }
-    // for MT safe: mt_pushOK shall take over aEle's content (so sender can't touch the content)
-    // - sender holds SafeWeak/weak_ptr: safe
-    // - not 100% MT safe: eg usr holds raw_ptr, aEle.member-ptr is unsafe
-    auto reHomeEle = aEle.handover();
-    if (!reHomeEle)
+    // detachWeak() refuses a stashed shared_ptr and expires weak_ptr taken from get().
+    auto fresh = aEle.detachWeak();
+    if (!fresh)
     {
-        HID("!!! push failed: not new_safe or multi-owner (use_count=" << aEle.use_count() << ")");
+        ERR("(MtQ) push failed: SafePtrOver detachWeak failed, use_count=" << aEle.use_count());
         return false;
     }
 
     // push
     try {
         std::lock_guard guard(mt_mutex_);
-        mt_queue_.emplace_back(std::move(reHomeEle));  // SafePtr<void> keeps typeid(aEleType) in lastType_
+        mt_queue_.emplace_back(std::move(fresh));  // SafePtrOver<void> keeps typeid(aEleType) in lastType_
     } catch(...) {  // ut can't cover this branch; rare but safer
+        aEle = std::move(fresh);  // emplace did not take it; give the object back
         EMG("(MtQ) except=%s in mt_pushOK", mt_exceptInfo());
         return false;
     }
@@ -123,7 +124,7 @@ bool MtInQueue::mt_pushOK(SafePtr<aEleType>&& aEle) noexcept
 
 // ***********************************************************************************************
 template<class aEleType>
-SafePtr<aEleType> MtInQueue::pop() noexcept
+SafePtrOver<aEleType> MtInQueue::pop() noexcept
 {
     static_assert(!std::is_void_v<aEleType>,
         "(MtQ) aEleType can't be void: its lastType is the type before erasure");
@@ -139,7 +140,7 @@ SafePtr<aEleType> MtInQueue::pop() noexcept
     // pop
     auto ele = std::move(*it);
     cache_.pop_front();
-    return safe_cast<aEleType>(ele);
+    return safe_cast<aEleType>(std::move(ele));
 }
 
 // ***********************************************************************************************
@@ -200,4 +201,5 @@ MtInQueue& mt_getQ() noexcept;
 // 2026-10-14  CSZ       - EMG in rare err
 // 2026-11-04  CSZ       - enhance push safety for SafeWeak/weak_ptr
 // 2026-11-04  CSZ       - dec mem
+// 2026-11-10  CSZ       - SafePtr to SafePtrOver
 // ***********************************************************************************************

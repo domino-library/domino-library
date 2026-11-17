@@ -32,7 +32,7 @@ AsyncBack::AsyncBack(size_t aMaxAsync)
 }
 
 // ***********************************************************************************************
-bool AsyncBack::newTaskOK(MT_TaskEntryFN mt_aEntryFN, TaskBackFN aBackFN, UniLog& oneLog) noexcept
+bool AsyncBack::newTaskOK_(MT_SafeThEntryFN mt_aEntryFN, UsrBackFN aBackFN, UniLog& oneLog) noexcept
 {
     try {
         if (! newTaskArgOK_(mt_aEntryFN, aBackFN, oneLog))
@@ -87,11 +87,11 @@ size_t AsyncBack::hdlDoneFut(UniLog& oneLog) noexcept
             fut_backFN_S_.pop_back();
             ++nHandledFut;
 
-            SafePtr ret;
+            SafePtrOver<void> ret;
             try { ret = task.mt_future_.get(); }
             catch(...) { ERR("(AsyncBack) entryFN() except=" << mt_exceptInfo()); }
 
-            try { task.backFN_(move(ret)); }  // callback
+            try { task.backFN_(SafePtr<void>(std::move(ret))); }  // crossed
             catch(...) { ERR("(AsyncBack) backFN() except=" << mt_exceptInfo()); }
         }
         else
@@ -103,9 +103,9 @@ size_t AsyncBack::hdlDoneFut(UniLog& oneLog) noexcept
 }
 
 // ***********************************************************************************************
-SafePtr<void> AsyncBack::mt_thMain_(MT_TaskEntryFN mt_aEntryFN, std::atomic<size_t>& mt_nDoneFut) noexcept
+SafePtrOver<void> AsyncBack::mt_thMain_(MT_SafeThEntryFN mt_aEntryFN, std::atomic<size_t>& mt_nDoneFut) noexcept
 {
-    SafePtr ret;
+    SafePtrOver<void> ret;
     try { ret = mt_aEntryFN(); }
     catch(...) {
         EMG("(AsyncBack) entryFN() except=%s", mt_exceptInfo());

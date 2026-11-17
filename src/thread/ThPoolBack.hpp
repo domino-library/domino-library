@@ -44,11 +44,12 @@ public:
     ThPoolBack(ThPoolBack&&) = delete;
     ThPoolBack& operator=(ThPoolBack&&) = delete;
 
-    [[nodiscard]] bool newTaskOK(MT_TaskEntryFN, TaskBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
+    using ThreadBack::newTaskOK;  // fn, back, args...
     [[nodiscard]] size_t hdlDoneFut(UniLog& = UniLog::defaultUniLog_) noexcept override;
     [[nodiscard]] size_t nFut() const noexcept override { return nInFlight_; }
 
 private:
+    [[nodiscard]] bool newTaskOK_(MT_SafeThEntryFN, UsrBackFN, UniLog& = UniLog::defaultUniLog_) noexcept override;
     void mt_threadMain_() noexcept;  // runs in each pool thread
     void clean_() noexcept;
 
@@ -58,9 +59,9 @@ private:
     // simple: no need promise/future & related headache
     struct MT_ThTaskInfo_
     {
-        MT_TaskEntryFN mt_entryFN_;
-        TaskBackFN backFN_;
-        SafePtr<void> mt_ret_;
+        MT_SafeThEntryFN mt_entryFN_;
+        UsrBackFN backFN_;
+        SafePtrOver<void> mt_ret_;
     };
     std::list<MT_ThTaskInfo_>  mt_taskQ_;
     std::list<MT_ThTaskInfo_>  mt_doneQ_;  // professional than counter(sync headache)
