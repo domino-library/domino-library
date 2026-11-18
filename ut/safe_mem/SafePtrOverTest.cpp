@@ -5,13 +5,19 @@
  * https://polyformproject.org/licenses/small-business/1.0.0
  * Required Notice: Copyright 2026 Shi-Zhong Chen
  */
+#include <any>
 #include <array>
+#include <forward_list>
 #include <functional>
+#include <future>
 #include <gtest/gtest.h>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <set>
+#include <stack>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -75,6 +81,66 @@ TEST(SafePtrOverTest, bugFix_nestedOwner_rejected)
     EXPECT_FALSE((canConstructSafePtrOver<std::map<int, SafePtr<int>>>::value));
     EXPECT_FALSE((canConstructSafePtrOver<std::unordered_map<int, int*>>::value));
 }
+// const/volatile is not part of the container specializations, so it used to skip the element check.
+TEST(SafePtrOverTest, bugFix_cvContainer_stillChecked)
+{
+    EXPECT_TRUE(canConstructSafePtrOver<const std::vector<int>>::value) << "REQ: const of a safe container stays safe";
+    EXPECT_TRUE(canConstructSafePtrOver<volatile std::vector<int>>::value);
+    auto safe = make_over<const std::vector<int>>(std::vector<int>{1});
+    ASSERT_TRUE(safe);
+    EXPECT_EQ(1u, safe.get()->size());
+
+    EXPECT_FALSE(canConstructSafePtrOver<const std::vector<int*>>::value) << "REQ: const does not hide a pointer element";
+    EXPECT_FALSE(canConstructSafePtrOver<volatile std::vector<int*>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<const volatile std::deque<SafePtr<int>>>::value);
+
+    EXPECT_FALSE((canConstructSafePtrOver<std::vector<const std::vector<int*>>>::value)) << "REQ: a nested const container is still opened";
+    EXPECT_FALSE((canConstructSafePtrOver<std::tuple<const std::vector<SafeWeak<int>>>>::value));
+    EXPECT_FALSE((canConstructSafePtrOver<std::optional<volatile std::array<int*, 1>>>::value));
+    EXPECT_FALSE((canConstructSafePtrOver<std::map<int, const std::set<int*>>>::value));
+    EXPECT_FALSE((canPassToMakeOver<int, std::vector<const std::vector<int*>>>::value));
+}
+
+// Not in the opened-container list, so a pointer inside was treated as a plain value.
+TEST(SafePtrOverTest, bugFix_otherStd_rejectsPointer)
+{
+    EXPECT_TRUE(canConstructSafePtrOver<std::list<int>>::value);
+    EXPECT_TRUE(canConstructSafePtrOver<std::forward_list<int>>::value);
+    EXPECT_TRUE((canConstructSafePtrOver<std::multimap<int, int>>::value));
+    EXPECT_TRUE(canConstructSafePtrOver<std::multiset<int>>::value);
+    EXPECT_TRUE((canConstructSafePtrOver<std::unordered_multimap<int, int>>::value));
+    EXPECT_TRUE(canConstructSafePtrOver<std::unordered_multiset<int>>::value);
+    EXPECT_TRUE(canConstructSafePtrOver<std::queue<int>>::value);
+    EXPECT_TRUE(canConstructSafePtrOver<std::stack<int>>::value);
+    EXPECT_TRUE(canConstructSafePtrOver<std::priority_queue<int>>::value);
+
+    EXPECT_FALSE(canConstructSafePtrOver<std::list<int*>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::forward_list<SafePtr<int>>>::value);
+    EXPECT_FALSE((canConstructSafePtrOver<std::multimap<int, int*>>::value));
+    EXPECT_FALSE(canConstructSafePtrOver<std::multiset<SafeWeak<int>>>::value);
+    EXPECT_FALSE((canConstructSafePtrOver<std::unordered_multimap<int*, int>>::value));
+    EXPECT_FALSE(canConstructSafePtrOver<std::unordered_multiset<std::shared_ptr<int>>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::queue<int*>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::stack<std::weak_ptr<int>>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::priority_queue<int*>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<const std::list<int*>>::value);
+    EXPECT_FALSE((canPassToMakeOver<int, std::queue<int*>>::value));
+
+    auto safe = make_over<std::list<int>>(std::list<int>{1});
+    ASSERT_TRUE(safe);
+    EXPECT_EQ(1u, safe.get()->size());
+
+    EXPECT_FALSE(canConstructSafePtrOver<std::any>::value) << "REQ: any can hold a pointer";
+    EXPECT_FALSE(canConstructSafePtrOver<const std::any>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::future<int>>::value) << "REQ: the promise stays behind";
+    EXPECT_FALSE(canConstructSafePtrOver<std::future<int*>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::shared_future<int>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::promise<int>>::value);
+    EXPECT_FALSE(canConstructSafePtrOver<std::vector<std::future<int>>>::value);
+    EXPECT_FALSE((canPassToMakeOver<int, std::any>::value));
+    EXPECT_FALSE((canPassToMakeOver<int, std::future<int>>::value));
+}
+
 TEST(SafePtrOverTest, bugFix_set_rejectsPointerElement)
 {
     EXPECT_TRUE(canConstructSafePtrOver<std::set<int>>::value);
