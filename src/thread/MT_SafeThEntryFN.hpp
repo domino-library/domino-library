@@ -42,7 +42,7 @@ template<class aUsrEntryFN> struct is_entry_fn<
 // unique_ptr is excluded: unique_ptr(T*) accepts a raw pointer, so its origin is not controlled.
 template<class aEntryArg> struct is_entry_arg : std::bool_constant<
     std::is_arithmetic_v<aEntryArg> || std::is_enum_v<aEntryArg> ||  // digit is safe
-    is_safe_ptr_over<aEntryArg>::value> {};    // SafePtrOver: sole owner, built only by make_over
+    is_safe_ptr_over<aEntryArg>::value> {};  // SafePtrOver: sole owner, built only by make_over
 template<> struct is_entry_arg<std::string> : std::true_type {};     // alter: string
 
 // ***********************************************************************************************

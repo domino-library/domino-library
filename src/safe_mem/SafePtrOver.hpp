@@ -10,280 +10,62 @@
 // * data safety(eg detach from weak_ptr) cross thread(eg MtQ/entry-fn/back-fn)
 //   . SafePtr: focus(min) on single-thread usage; if cross-thread, use SafePtrOver instead
 //   . SafePtrOver: create new to cross-thread if can detach from weak_ptr/.., otherwise create null obj
-// - white & black list:
-//   . base on common sense (but/so not 100%)
-//   . eg forbid struct (since hard to check all fields/sub-structs; but can pass if usr guarantees by is_entry_arg)
-//   . future can inc/dec the list (to fit for real world)
+// - make_over<T> is the user's PROMISE - the whole T is cross-thread safe
+//   . OBVIOUSLY to usr, T=(int*, vector<int*>, shared_ptr, SafePtr, ...) is UNSAFE
+//   . banned opaque: enable_shared_from_this, because detachWeak() drops the control block weak_this still uses
+//   . banned opaque: initializer_list / string_view, a copy of a pointer plus a length
+//     span / mdspan are the same kind; add them when the promised standard has them
 // ***********************************************************************************************
 #pragma once
 
-#include <any>
-#include <array>
-#include <deque>
-#include <forward_list>
-#include <functional>
-#include <future>
-#include <list>
-#include <map>
-#include <optional>
-#include <queue>
-#include <set>
-#include <stack>
-#include <string>
+#include <initializer_list>
 #include <string_view>
-#include <tuple>
 #include <type_traits>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
-#include <variant>
-#include <vector>
 
 #include "SafePtr.hpp"
 
 namespace rlib
 {
 // ***********************************************************************************************
-template<typename T> struct is_safe_ptr_type : std::false_type {};
-template<typename T> struct is_safe_ptr_type<SafePtr<T>> : std::true_type {};
+template<typename T> class SafePtrOver;
+template<typename T> struct is_safe_ptr_over : std::false_type {};
+template<typename T> struct is_safe_ptr_over<SafePtrOver<T>> : std::true_type {};
 
-template<typename T> struct is_safe_weak_type : std::false_type {};
-template<typename T> struct is_safe_weak_type<SafeWeak<T>> : std::true_type {};
-
-template<typename T> struct is_std_shared_type : std::false_type {};
-template<typename T> struct is_std_shared_type<std::shared_ptr<T>> : std::true_type {};
-
-template<typename T> struct is_std_weak_type : std::false_type {};
-template<typename T> struct is_std_weak_type<std::weak_ptr<T>> : std::true_type {};
-
-template<typename T> struct is_std_function_type : std::false_type {};
-template<typename T> struct is_std_function_type<std::function<T>> : std::true_type {};
-
-template<typename T> struct is_ref_wrapper_type : std::false_type {};
-template<typename T> struct is_ref_wrapper_type<std::reference_wrapper<T>> : std::true_type {};
-
-template<typename T> struct is_std_unique_type : std::false_type {};
-template<typename T, typename D> struct is_std_unique_type<std::unique_ptr<T, D>> : std::true_type {};
-
-template<typename T> struct is_std_any : std::false_type {};
-template<> struct is_std_any<std::any> : std::true_type {};
-
-// The other end (promise, or the single future) stays behind and still touches this state.
-template<typename T> struct is_shared_state_type: std::false_type {};
-template<typename T> struct is_shared_state_type<std::future<T>>: std::true_type {};
-template<typename T> struct is_shared_state_type<std::shared_future<T>>: std::true_type {};
-template<typename T> struct is_shared_state_type<std::promise<T>>: std::true_type {};
+template<typename T> struct is_initializer_list : std::false_type {};
+template<typename E> struct is_initializer_list<std::initializer_list<E>> : std::true_type {};
 
 template<typename T> struct is_string_view : std::false_type {};
 template<typename C, typename Tr> struct is_string_view<std::basic_string_view<C, Tr>> : std::true_type {};
-
-template<typename T> struct is_std_string : std::false_type {};
-template<typename C, typename Tr, typename A> struct is_std_string<std::basic_string<C, Tr, A>> : std::true_type {};
 
 // detachWeak() builds a 2nd ctrl blk; weak_this stays on the 1st, so shared_from_this() breaks
 template<typename T, typename = void> struct has_from_this : std::false_type {};
 template<typename T> struct has_from_this<T, std::void_t<decltype(std::declval<const T&>().weak_from_this())>>
     : std::true_type {};
-template<typename T> constexpr bool has_from_this_v = has_from_this<T>::value;
-
-template<typename T> class SafePtrOver;
-template<typename T> struct is_safe_ptr_over : std::false_type {};
-template<typename T> struct is_safe_ptr_over<SafePtrOver<T>> : std::true_type {};
 
 // value stays false for a banned T, so a caller can ask without a compile error.
-// check() is what make_over calls: each ban has its own static_assert.
-// Aggregates are not opened: C++17 has no field list. Containers below are.
-// cv is stripped before those specializations match, so const vector<int*> is still opened.
-// Each nested check goes back through canConstructSafePtrOver, which strips again.
+// check() is what make_over calls. cv is stripped first, so const string_view is still banned.
 template<typename T> struct canConstructSafePtrOver;
 
 template<typename T>
 struct canConstructSafePtrOver_impl {
     using U = T;  // already cv-unqualified, except a reference keeps the cv of what it refers to
-    static constexpr bool pointer        = std::is_pointer_v<U>;
-    static constexpr bool member_pointer = std::is_member_pointer_v<U>;
-    static constexpr bool safe_ptr       = is_safe_ptr_type<U>::value;
-    static constexpr bool safe_weak      = is_safe_weak_type<U>::value;
-    static constexpr bool shared         = is_std_shared_type<U>::value;
-    static constexpr bool weak           = is_std_weak_type<U>::value;
-    static constexpr bool array          = std::is_array_v<U>;
-    static constexpr bool reference      = std::is_reference_v<T>;
-    static constexpr bool ref_wrapper    = is_ref_wrapper_type<U>::value;
-    static constexpr bool is_void        = std::is_void_v<T>;
-    static constexpr bool function       = std::is_function_v<U>;
-    static constexpr bool std_function   = is_std_function_type<U>::value;
-    static constexpr bool unique         = is_std_unique_type<U>::value;
-    static constexpr bool nested         = is_safe_ptr_over<U>::value;
-    static constexpr bool from_this      = has_from_this_v<U>;
-    static constexpr bool string_view    = is_string_view<U>::value;
-    static constexpr bool std_any        = is_std_any<U>::value;
-    static constexpr bool shared_state   = is_shared_state_type<U>::value;
+    static constexpr bool from_this   = has_from_this<U>::value;
+    static constexpr bool string_view = is_string_view<U>::value;
+    static constexpr bool init_list   = is_initializer_list<U>::value;
 
-    static constexpr bool value =
-        !pointer && !member_pointer && !safe_ptr && !safe_weak && !shared && !weak && !array
-        && !reference && !ref_wrapper && !is_void && !function
-        && !std_function && !unique && !nested && !from_this && !string_view
-        && !std_any && !shared_state;
+    static constexpr bool value = !from_this && !string_view && !init_list;
 
     static constexpr void check() noexcept {
-        static_assert(!pointer,        "(SafePtrOver) unsafe T pointing to other object");
-        static_assert(!member_pointer, "(SafePtrOver) unsafe T is a member pointer to other object");
-        static_assert(!safe_ptr,       "(SafePtrOver) unsafe T is a SafePtr type");
-        static_assert(!safe_weak,      "(SafePtrOver) unsafe T is a SafeWeak type");
-        static_assert(!shared,         "(SafePtrOver) unsafe T is a std::shared_ptr type");
-        static_assert(!weak,           "(SafePtrOver) unsafe T is a std::weak_ptr type");
-        static_assert(!array,          "(SafePtrOver) unsafe T is an array(=ptr)");
-        static_assert(!reference,      "(SafePtrOver) unsafe T referring to other object");
-        static_assert(!ref_wrapper,    "(SafePtrOver) unsafe T is a std::reference_wrapper type");
-        static_assert(!is_void,        "(SafePtrOver) can't construct SafePtrOver for void");
-        static_assert(!function,       "(SafePtrOver) can't construct SafePtrOver for function");
-        static_assert(!std_function,   "(SafePtrOver) unsafe T is a std::function (eg lambda with capture)");
-        static_assert(!unique,         "(SafePtrOver) unique_ptr(T*) can smuggle a raw pointer");
-        static_assert(!nested,         "(SafePtrOver) nested SafePtrOver hides another owner");
-        static_assert(!from_this,      "(SafePtrOver) weak_this stays on the control block detachWeak drops");
-        static_assert(!string_view,    "(SafePtrOver) string_view is a pointer plus a length");
-        static_assert(!std_any,        "(SafePtrOver) std::any can hold a pointer");
-        static_assert(!shared_state,   "(SafePtrOver) future/promise keeps shared state on the other side");
+        static_assert(!from_this,   "(SafePtrOver) weak_this stays on the control block detachWeak drops");
+        static_assert(!string_view, "(SafePtrOver) string_view is a pointer plus a length");
+        static_assert(!init_list,   "(SafePtrOver) initializer_list is a pointer plus a length");
     }
 };
 
 template<typename T>
 struct canConstructSafePtrOver : canConstructSafePtrOver_impl<std::remove_cv_t<T>> {};
 
-// A constructor arg must not smuggle a pointer or a view into the object.
-// const char* / char[N] is allowed only when the object is a std::string, which copies the chars.
-// Everything else reuses canConstructSafePtrOver, so a vector<int*> is refused too.
-template<typename Obj, typename Arg>
-struct canPassToMakeOver {
-    using A = std::remove_cv_t<std::remove_reference_t<Arg>>;
-    using P = std::remove_cv_t<std::conditional_t<std::is_pointer_v<A>,
-        std::remove_pointer_t<A>, std::remove_all_extents_t<A>>>;
-    static constexpr bool charForStr = is_std_string<std::remove_cv_t<Obj>>::value
-        && std::is_same_v<P, char> && (std::is_pointer_v<A> || std::is_array_v<A>);
-    static constexpr bool value = charForStr || canConstructSafePtrOver<A>::value;
-
-    static constexpr void check() noexcept {
-        if constexpr (!charForStr) canConstructSafePtrOver<A>::check();
-    }
-};
-
-// ***********************************************************************************************
-template<typename T, typename A>
-struct canConstructSafePtrOver_impl<std::vector<T, A>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, typename A>
-struct canConstructSafePtrOver_impl<std::deque<T, A>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, std::size_t N>
-struct canConstructSafePtrOver_impl<std::array<T, N>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, typename U>
-struct canConstructSafePtrOver_impl<std::pair<T, U>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value && canConstructSafePtrOver<U>::value;
-    static constexpr void check() noexcept {
-        canConstructSafePtrOver<T>::check();
-        canConstructSafePtrOver<U>::check();
-    }
-};
-template<typename... Ts>
-struct canConstructSafePtrOver_impl<std::tuple<Ts...>> {
-    static constexpr bool value = (canConstructSafePtrOver<Ts>::value && ...);
-    static constexpr void check() noexcept { (canConstructSafePtrOver<Ts>::check(), ...); }
-};
-template<typename T>
-struct canConstructSafePtrOver_impl<std::optional<T>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename... Ts>
-struct canConstructSafePtrOver_impl<std::variant<Ts...>> {
-    static constexpr bool value = (canConstructSafePtrOver<Ts>::value && ...);
-    static constexpr void check() noexcept { (canConstructSafePtrOver<Ts>::check(), ...); }
-};
-template<typename K, typename V, typename C, typename A>
-struct canConstructSafePtrOver_impl<std::map<K, V, C, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value && canConstructSafePtrOver<V>::value;
-    static constexpr void check() noexcept {
-        canConstructSafePtrOver<K>::check();
-        canConstructSafePtrOver<V>::check();
-    }
-};
-template<typename K, typename V, typename H, typename P, typename A>
-struct canConstructSafePtrOver_impl<std::unordered_map<K, V, H, P, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value && canConstructSafePtrOver<V>::value;
-    static constexpr void check() noexcept {
-        canConstructSafePtrOver<K>::check();
-        canConstructSafePtrOver<V>::check();
-    }
-};
-template<typename K, typename C, typename A>
-struct canConstructSafePtrOver_impl<std::set<K, C, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<K>::check(); }
-};
-template<typename K, typename H, typename P, typename A>
-struct canConstructSafePtrOver_impl<std::unordered_set<K, H, P, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<K>::check(); }
-};
-template<typename T, typename A>
-struct canConstructSafePtrOver_impl<std::list<T, A>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, typename A>
-struct canConstructSafePtrOver_impl<std::forward_list<T, A>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename K, typename V, typename C, typename A>
-struct canConstructSafePtrOver_impl<std::multimap<K, V, C, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value && canConstructSafePtrOver<V>::value;
-    static constexpr void check() noexcept {
-        canConstructSafePtrOver<K>::check();
-        canConstructSafePtrOver<V>::check();
-    }
-};
-template<typename K, typename C, typename A>
-struct canConstructSafePtrOver_impl<std::multiset<K, C, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<K>::check(); }
-};
-template<typename K, typename V, typename H, typename P, typename A>
-struct canConstructSafePtrOver_impl<std::unordered_multimap<K, V, H, P, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value && canConstructSafePtrOver<V>::value;
-    static constexpr void check() noexcept {
-        canConstructSafePtrOver<K>::check();
-        canConstructSafePtrOver<V>::check();
-    }
-};
-template<typename K, typename H, typename P, typename A>
-struct canConstructSafePtrOver_impl<std::unordered_multiset<K, H, P, A>> {
-    static constexpr bool value = canConstructSafePtrOver<K>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<K>::check(); }
-};
-// Container::value_type is T, so the element check covers the underlying container.
-template<typename T, typename C>
-struct canConstructSafePtrOver_impl<std::queue<T, C>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, typename C>
-struct canConstructSafePtrOver_impl<std::stack<T, C>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
-template<typename T, typename C, typename Comp>
-struct canConstructSafePtrOver_impl<std::priority_queue<T, C, Comp>> {
-    static constexpr bool value = canConstructSafePtrOver<T>::value;
-    static constexpr void check() noexcept { canConstructSafePtrOver<T>::check(); }
-};
 
 // ***********************************************************************************************
 template<typename T = void>
@@ -398,7 +180,6 @@ template<typename U, typename... ConstructArgs>
 [[nodiscard]] SafePtrOver<U> make_over(ConstructArgs&&... aArgs) noexcept
 {
     canConstructSafePtrOver<U>::check();
-    (canPassToMakeOver<U, ConstructArgs>::check(), ...);
     try {
         U* p = new U(std::forward<ConstructArgs>(aArgs)...);
         return SafePtrOver<U>(std::shared_ptr<U>(p, SafeDeleter{
