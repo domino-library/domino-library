@@ -151,7 +151,9 @@ private:
 template<typename T>
 bool SafePtrOver<T>::canDetachWeak() const noexcept
 {
-    return ptr_.use_count() == 1 && std::get_deleter<SafeDeleter>(ptr_.pT_);
+    // A null owner has no SafeDeleter. Check that before use_count, or the null case never reaches it.
+    const auto* del = std::get_deleter<SafeDeleter>(ptr_.pT_);
+    return del != nullptr && ptr_.use_count() == 1;
 }
 
 // ***********************************************************************************************

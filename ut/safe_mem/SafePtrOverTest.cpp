@@ -152,6 +152,10 @@ TEST(SafePtrOverTest, share_keepsCreatedObject)
 
 TEST(SafePtrOverTest, detachWeak_cutsWeak_andRefusesShared)
 {
+    SafePtrOver<int> empty;
+    EXPECT_FALSE(empty.canDetachWeak());
+    EXPECT_FALSE(empty.detachWeak());
+
     auto own = make_over<int>(9);
     std::weak_ptr<int> weak = own.get();
     auto fresh = own.detachWeak();
